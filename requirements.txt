@@ -1,0 +1,14 @@
+# Core dependencies
+pandas
+numpy
+scikit-learn
+
+# API
+fastapi
+uvicorn
+
+# Notebooks
+jupyter
+
+# Testing
+pytest
