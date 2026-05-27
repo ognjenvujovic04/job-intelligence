@@ -9,6 +9,9 @@ uvicorn
 
 # Notebooks
 jupyter
+missingno
+seaborn
+matplotlib
 
 # Testing
 pytest
