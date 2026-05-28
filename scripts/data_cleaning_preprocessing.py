@@ -1,5 +1,25 @@
-import pandas as pd
+import logging
 import numpy as np
+import pandas as pd
+
+# Initialize module-level logger
+logger = logging.getLogger(__name__)
+
+
+def _configure_logging(verbose: bool):
+    """Internal helper to enable or disable pipeline logging dynamically."""
+    if verbose:
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(
+                logging.Formatter(
+                    "[%(levelname)s] %(message)s"
+                )
+            )
+            logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+    else:
+        logger.setLevel(logging.CRITICAL)
 
 
 # =========================
@@ -36,6 +56,10 @@ def drop_columns(df, columns=None):
     ]
 
     columns = columns if columns is not None else default_columns
+    
+    # Identify which target columns actually exist in the dataframe
+    existing_drops = [col for col in columns if col in df.columns]
+    logger.info(f"Dropping columns: {existing_drops}")
 
     return df.drop(columns=columns, errors='ignore')
 
@@ -44,7 +68,7 @@ def drop_columns(df, columns=None):
 # DUPLICATE HANDLING
 # =========================
 
-def remove_duplicates(df, exclude_columns=None):
+def remove_duplicates(df, exclude_columns=[]):
     """
     Remove duplicate rows.
 
@@ -56,11 +80,14 @@ def remove_duplicates(df, exclude_columns=None):
         pd.DataFrame
     """
 
-    exclude_columns = exclude_columns if exclude_columns is not None else ['job_id']
-
     subset_cols = [c for c in df.columns if c not in exclude_columns]
 
-    return df.drop_duplicates(subset=subset_cols, keep='first')
+    initial_rows = len(df)
+    df_cleaned = df.drop_duplicates(subset=subset_cols, keep='first')
+    
+    logger.info(f"Removed {initial_rows - len(df_cleaned)} duplicate rows (ignoring columns: {exclude_columns})")
+
+    return df_cleaned
 
 
 # =========================
@@ -87,15 +114,17 @@ def clean_text_columns(df, columns=None):
     ]
 
     columns = columns if columns is not None else default_columns
+    existing_cols = [col for col in columns if col in df.columns]
+    
+    logger.info(f"Normalizing text (lowercase & strip whitespace) in columns: {existing_cols}")
 
-    for col in columns:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.lower()
-                .str.strip()
-            )
+    for col in existing_cols:
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.lower()
+            .str.strip()
+        )
 
     return df
 
@@ -117,6 +146,7 @@ def remove_url_protocol(df, column='application_url'):
     """
 
     if column in df.columns:
+        logger.info(f"Removing 'http://' and 'https://' prefixes from column: '{column}'")
         df[column] = df[column].str.replace(
             r'^https?://',
             '',
@@ -162,12 +192,20 @@ def handle_salary_outliers(
         else default_salary_cols
     )
 
+    if salary_column not in df.columns:
+        return df
+
     salary = df[salary_column].dropna()
     salary = salary[salary > 0]
 
     threshold = salary.quantile(quantile_threshold)
-
     outlier_mask = df[salary_column] > threshold
+    outlier_count = outlier_mask.sum()
+
+    logger.info(
+        f"Identified {outlier_count} outliers in '{salary_column}' (> {threshold:.2f}). "
+        f"Setting related columns {related_salary_columns} to NaN."
+    )
 
     df.loc[outlier_mask, related_salary_columns] = np.nan
 
@@ -180,7 +218,7 @@ def handle_salary_outliers(
 
 def save_dataset(
     df,
-    output_path="../data/processed/cleaned_job_dataset.csv"
+    output_path="../data/processed/cleaned_job_postings.csv"
 ):
     """
     Save dataframe to CSV.
@@ -189,7 +227,7 @@ def save_dataset(
         df (pd.DataFrame): Dataframe to save
         output_path (str): Output path
     """
-
+    logger.info(f"Saving cleaned dataset to: {output_path}")
     df.to_csv(output_path, index=False)
 
 
@@ -199,31 +237,31 @@ def save_dataset(
 
 def preprocess_dataset(
     input_path="../data/raw/postings.csv",
-    output_path="../data/processed/cleaned_job_dataset.csv"
+    output_path="../data/processed/cleaned_job_postings.csv",
+    verbose=True
 ):
     """
     Complete preprocessing pipeline.
+    
+    Parameters:
+        input_path (str): Path to raw CSV data
+        output_path (str): Target path for cleaned CSV data
+        verbose (bool): If True, outputs step-by-step progress to stdout. Default is True.
     """
+    # Toggle logging state
+    _configure_logging(verbose)
 
     df = pd.read_csv(input_path)
-
-    print(f"Initial shape: {df.shape}")
+    logger.info(f"Pipeline started. Initial dataset shape: {df.shape}")
 
     df = drop_columns(df)
-    print(f"Shape after dropping columns: {df.shape}")
-
     df = remove_duplicates(df)
-    print(f"Shape after removing duplicates: {df.shape}")
-
     df = clean_text_columns(df)
-
     df = remove_url_protocol(df)
-
     df = handle_salary_outliers(df)
-
+    
     save_dataset(df, output_path)
-
-    print(f"Cleaned dataset saved to: {output_path}")
+    logger.info(f"Pipeline finished successfully. Final dataset shape: {df.shape}")
 
     return df
 
