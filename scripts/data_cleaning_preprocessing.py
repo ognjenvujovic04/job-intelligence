@@ -46,6 +46,7 @@ def drop_columns(df, columns=None):
         # Not useful for modeling
         'job_posting_url',
         'job_id',
+        'application_url',
 
         # Duplicate information
         'work_type',
@@ -127,34 +128,6 @@ def clean_text_columns(df, columns=None):
         )
 
     return df
-
-
-# =========================
-# URL CLEANING
-# =========================
-
-def remove_url_protocol(df, column='application_url'):
-    """
-    Remove http:// or https:// from URLs.
-
-    Parameters:
-        df (pd.DataFrame): Input dataframe
-        column (str): URL column
-
-    Returns:
-        pd.DataFrame
-    """
-
-    if column in df.columns:
-        logger.info(f"Removing 'http://' and 'https://' prefixes from column: '{column}'")
-        df[column] = df[column].str.replace(
-            r'^https?://',
-            '',
-            regex=True
-        )
-
-    return df
-
 
 # =========================
 # OUTLIER HANDLING
@@ -257,7 +230,6 @@ def preprocess_dataset(
     df = drop_columns(df)
     df = remove_duplicates(df)
     df = clean_text_columns(df)
-    df = remove_url_protocol(df)
     df = handle_salary_outliers(df)
     
     save_dataset(df, output_path)
