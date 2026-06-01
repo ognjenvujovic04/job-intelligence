@@ -2,6 +2,7 @@
 pandas
 numpy
 scikit-learn
+tqdm
 
 # API
 fastapi
@@ -15,3 +16,10 @@ matplotlib
 
 # Testing
 pytest
+
+# NLP
+huggingface_hub
+transformers
+torch
+sentence-transformers==3.3.1
+accelerate
