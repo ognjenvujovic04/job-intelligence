@@ -45,7 +45,7 @@ def drop_columns(df, columns=None):
 
         # Not useful for modeling
         'job_posting_url',
-        'job_id',
+        # 'job_id',  # Keep job_id for future merging
         'application_url',
 
         # Duplicate information
@@ -228,7 +228,7 @@ def preprocess_dataset(
     logger.info(f"Pipeline started. Initial dataset shape: {df.shape}")
 
     df = drop_columns(df)
-    df = remove_duplicates(df)
+    df = remove_duplicates(df,'job_id')
     df = clean_text_columns(df)
     df = handle_salary_outliers(df)
     
