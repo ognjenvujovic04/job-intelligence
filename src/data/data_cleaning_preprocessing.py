@@ -7,15 +7,12 @@ logger = logging.getLogger(__name__)
 
 
 def _configure_logging(verbose: bool):
-    """Internal helper to enable or disable pipeline logging dynamically."""
     if verbose:
-        if not logger.handlers:
+        if not logger.handlers and not logging.getLogger().handlers:
             handler = logging.StreamHandler()
-            handler.setFormatter(
-                logging.Formatter(
-                    "[%(levelname)s] %(message)s"
-                )
-            )
+            formatter = logging.Formatter("[%(levelname)s] %(asctime)s - %(message)s")
+            formatter.default_msec_format = "%s.%03d"
+            handler.setFormatter(formatter)
             logger.addHandler(handler)
         logger.setLevel(logging.INFO)
     else:
