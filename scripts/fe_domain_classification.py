@@ -5,7 +5,7 @@ against hand-crafted domain prototypes.
 Model: 0xnbk/nbk-ats-domain-v1-en (domain-aware BERT)
 
 Input:  data/processed/cleaned_job_postings.csv
-Output: data/processed/domain_probabilities.csv
+Output: data/precomputed/domain_probabilities.csv
         - one column per domain with cosine similarity scores
         - no argmax/threshold applied here; downstream code decides
 """
@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 REPO_ID = "0xnbk/nbk-ats-domain-v1-en"
 INPUT_PATH = "../data/processed/cleaned_job_postings.csv"
-OUTPUT_PATH = "../data/processed/domain_probabilities.csv"
+OUTPUT_PATH = "../data/precomputed/domain_probabilities.csv"
 BATCH_SIZE = 64
 MAX_LENGTH = 8192
 
