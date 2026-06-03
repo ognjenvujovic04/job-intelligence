@@ -191,7 +191,7 @@ def handle_salary_outliers(
 
 def save_dataset(
     df,
-    output_path="../data/processed/cleaned_job_postings.csv"
+    output_path="../../data/processed/cleaned_job_postings.csv"
 ):
     """
     Save dataframe to CSV.
@@ -209,8 +209,8 @@ def save_dataset(
 # =========================
 
 def preprocess_dataset(
-    input_path="../data/raw/postings.csv",
-    output_path="../data/processed/cleaned_job_postings.csv",
+    input_path="../../data/raw/postings.csv",
+    output_path="../../data/processed/cleaned_job_postings.csv",
     verbose=True
 ):
     """

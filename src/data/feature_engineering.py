@@ -861,8 +861,8 @@ def frequency_encode(df_train, df_test, configs=None):
 def save_feature_matrices(
     df_train,
     df_test,
-    train_path="../data/processed/feature_matrix_train.csv",
-    test_path="../data/processed/feature_matrix_test.csv",
+    train_path="../../data/processed/feature_matrix_train.csv",
+    test_path="../../data/processed/feature_matrix_test.csv",
 ):
     """
     Save train and test feature matrices to CSV.
@@ -892,10 +892,10 @@ def save_feature_matrices(
 # =========================================================
 
 def feature_engineering_pipeline(
-    input_path="../data/processed/cleaned_job_postings.csv",
-    domain_path="../data/precomputed/domain_probabilities.csv",
-    train_output="../data/processed/feature_matrix_train.csv",
-    test_output="../data/processed/feature_matrix_test.csv",
+    input_path="../../data/processed/cleaned_job_postings.csv",
+    domain_path="../../data/precomputed/domain_probabilities.csv",
+    train_output="../../data/processed/feature_matrix_train.csv",
+    test_output="../../data/processed/feature_matrix_test.csv",
     test_size=0.20,
     random_state=42,
     smoothing=20,

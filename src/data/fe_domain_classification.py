@@ -28,8 +28,8 @@ log = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 REPO_ID = "0xnbk/nbk-ats-domain-v1-en"
-INPUT_PATH = "../data/processed/cleaned_job_postings.csv"
-OUTPUT_PATH = "../data/precomputed/domain_probabilities.csv"
+INPUT_PATH = "../../data/processed/cleaned_job_postings.csv"
+OUTPUT_PATH = "../../data/precomputed/domain_probabilities.csv"
 BATCH_SIZE = 64
 MAX_LENGTH = 8192
 
