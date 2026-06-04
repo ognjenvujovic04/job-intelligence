@@ -76,7 +76,6 @@ def build_logreg_pipeline(
             max_iter=max_iter,
             C=C,
             random_state=random_state,
-            n_jobs=-1,
             verbose=0,
         )),
     ])
@@ -124,3 +123,44 @@ def get_feature_importance(pipeline, feature_names, top_n=15):
     ).sort_values(ascending=False)
 
     return importance.head(top_n)
+
+
+# =========================================================
+# STANDALONE EXECUTION
+# =========================================================
+
+if __name__ == "__main__":
+    from sklearn.metrics import classification_report
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    TRAIN_PATH = "../../data/processed/feature_matrix_train.csv"
+    TEST_PATH = "../../data/processed/feature_matrix_test.csv"
+    TARGET = "experience_level_ord"
+
+    df_train = pd.read_csv(TRAIN_PATH)
+    df_test = pd.read_csv(TEST_PATH)
+
+    df_train = df_train.dropna(subset=[TARGET])
+    df_test = df_test.dropna(subset=[TARGET])
+
+    y_train = df_train[TARGET].astype(int)
+    y_test = df_test[TARGET].astype(int)
+    X_train = df_train.drop(columns=[TARGET])
+    X_test = df_test.drop(columns=[TARGET])
+
+    # Build and train the pipeline
+    pipeline = build_logreg_pipeline(X_train, y_train)
+    y_pred = pipeline.predict(X_test)
+
+    print("\n=== Classification Report ===")
+    print(classification_report(y_test, y_pred, zero_division=0))
+
+    imp = get_feature_importance(pipeline, X_train.columns, top_n=15)
+    print("\n=== Top 15 Features (mean abs coefficient) ===")
+    for feat, val in imp.items():
+        print(f"  {feat:<35s} {val:>10.4f}")

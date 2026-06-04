@@ -28,3 +28,4 @@ accelerate
 lightgbm
 xgboost 
 catboost
+pytorch-tabnet
