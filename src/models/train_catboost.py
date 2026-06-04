@@ -22,6 +22,16 @@ logger = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 
+# Default tunable hyperparameters (safe to override via `params`)
+DEFAULT_PARAMS = {
+    "iterations": 2000,
+    "learning_rate": 0.05,
+    "depth": 6,
+    "l2_leaf_reg": 3.0,
+    "bootstrap_type": "MVS",
+    "subsample": 0.8,
+}
+
 
 # =========================================================
 # PREPROCESSING
@@ -78,7 +88,7 @@ def _compute_class_weights(y):
 # TRAINING
 # =========================================================
 
-def train_catboost(X_train, y_train, val_size=0.15):
+def train_catboost(X_train, y_train, val_size=0.15, params=None):
     """
     Train a CatBoost multiclass classifier with early stopping.
 
@@ -92,6 +102,8 @@ def train_catboost(X_train, y_train, val_size=0.15):
         y_train (pd.Series): Training target (integer-encoded).
         val_size (float): Fraction of training data held out for
             early-stopping validation.
+        params (dict, optional): Hyperparameter overrides merged on top of
+            `DEFAULT_PARAMS` (shallow merge).
 
     Returns:
         CatBoostClassifier: Fitted model.
@@ -110,14 +122,10 @@ def train_catboost(X_train, y_train, val_size=0.15):
     )
 
     class_weights = _compute_class_weights(y_trn)
+    # Merge provided params on top of defaults (backward compatible)
+    merged_params = {**DEFAULT_PARAMS, **(params or {})}
 
     model = CatBoostClassifier(
-        iterations=2000,
-        learning_rate=0.05,
-        depth=6,
-        l2_leaf_reg=3.0,
-        bootstrap_type="MVS",
-        subsample=0.8,
         class_weights=class_weights,
         loss_function="MultiClass",
         eval_metric="MultiClass",
@@ -127,6 +135,7 @@ def train_catboost(X_train, y_train, val_size=0.15):
         early_stopping_rounds=100,
         task_type="CPU",
         allow_writing_files=False,
+        **merged_params,
     )
 
     train_pool = Pool(X_trn, label=y_trn)

@@ -27,6 +27,29 @@ logger = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 
+# Default tunable hyperparameters (safe to override via `params`)
+DEFAULT_PARAMS = {
+    "n_d": 16,
+    "n_a": 16,
+    "n_steps": 3,
+    "gamma": 1.8,
+    "lambda_sparse": 1e-2,
+    "cat_idxs": [],
+    "cat_dims": [],
+    "cat_emb_dim": [],
+    "optimizer_fn": torch.optim.Adam,
+    "optimizer_params": {"lr": 2e-2, "weight_decay": 1e-5},
+    "scheduler_fn": torch.optim.lr_scheduler.StepLR,
+    "scheduler_params": {"step_size": 15, "gamma": 0.5},
+    "mask_type": "entmax",
+    # Fit-time params
+    "max_epochs": 200,
+    "patience": 30,
+    "batch_size": 1024,
+    "virtual_batch_size": 256,
+    "drop_last": False,
+}
+
 
 # =========================================================
 # PREPROCESSING HELPERS
@@ -67,7 +90,7 @@ def _impute_and_scale(X_train, X_val, X_test=None):
 # TRAINING
 # =========================================================
 
-def train_tabnet(X_train, y_train, val_size=0.15):
+def train_tabnet(X_train, y_train, val_size=0.15, params=None):
     """
     Train a TabNet multiclass classifier with early stopping.
 
@@ -82,6 +105,8 @@ def train_tabnet(X_train, y_train, val_size=0.15):
         y_train (pd.Series): Training target (integer-encoded).
         val_size (float): Fraction of training data held out for
             early-stopping validation.
+        params (dict, optional): Hyperparameter overrides merged on top of
+            `DEFAULT_PARAMS` (shallow merge).
 
     Returns:
         dict with keys:
@@ -118,22 +143,17 @@ def train_tabnet(X_train, y_train, val_size=0.15):
     )
     sample_weights = np.array([weights[c] for c in y_trn_arr])
 
+    # Merge provided params on top of defaults (backward compatible)
+    merged = {**DEFAULT_PARAMS, **(params or {})}
+
+    # Extract fit-time params
+    fit_keys = ("max_epochs", "patience", "batch_size", "virtual_batch_size", "drop_last")
+    fit_kwargs = {k: merged.pop(k) for k in fit_keys if k in merged}
+
     model = TabNetClassifier(
-        n_d=16,                    # was 32, smaller = less capacity to memorize
-        n_a=16,                    # keep equal to n_d
-        n_steps=3,                 # was 5, fewer steps = simpler decision path
-        gamma=1.8,                 # was 1.5, higher = more feature reuse penalty
-        lambda_sparse=1e-2,        # was 1e-3, 10x stronger sparsity pressure
-        cat_idxs=[],
-        cat_dims=[],
-        cat_emb_dim=[],
-        optimizer_fn=torch.optim.Adam,
-        optimizer_params=dict(lr=2e-2, weight_decay=1e-5),  # added weight decay
-        scheduler_fn=torch.optim.lr_scheduler.StepLR,       # decay LR over time
-        scheduler_params=dict(step_size=15, gamma=0.5),
-        mask_type="entmax",
         seed=RANDOM_STATE,
         verbose=10,
+        **merged,
     )
 
     logger.info("Training TabNet classifier...")
@@ -144,12 +164,8 @@ def train_tabnet(X_train, y_train, val_size=0.15):
         eval_set=[(X_val_arr, y_val_arr)],
         eval_name=["val"],
         eval_metric=["logloss"],
-        max_epochs=200,
-        patience=30,
-        batch_size=1024,
-        virtual_batch_size=256,    # Ghost Batch Normalization chunk size
         weights=sample_weights,
-        drop_last=False,
+        **fit_kwargs,
     )
 
     best_epoch = model.best_epoch or len(model.history["loss"]) - 1

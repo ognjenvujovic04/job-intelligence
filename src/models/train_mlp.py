@@ -31,12 +31,27 @@ logger = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 
+# Default tunable hyperparameters (safe to override via `params`)
+DEFAULT_PARAMS = {
+    "hidden_layer_sizes": (128, 64, 32),
+    "activation": "tanh",
+    "solver": "adam",
+    "alpha": 1e-2,
+    "batch_size": 256,
+    "learning_rate": "adaptive",
+    "learning_rate_init": 3e-3,
+    "max_iter": 300,
+    "early_stopping": True,
+    "validation_fraction": 0.13,
+    "n_iter_no_change": 20,
+}
+
 
 # =========================================================
 # TRAINING
 # =========================================================
 
-def train_mlp(X_train, y_train, val_size=0.15):
+def train_mlp(X_train, y_train, val_size=0.15, params=None):
     """
     Train an MLP multiclass classifier with early stopping.
 
@@ -58,6 +73,8 @@ def train_mlp(X_train, y_train, val_size=0.15):
         y_train (pd.Series): Training target (integer-encoded).
         val_size (float): Fraction of training data held out for
             post-training validation reporting.
+        params (dict, optional): Hyperparameter overrides merged on top of
+            `DEFAULT_PARAMS` (shallow merge).
 
     Returns:
         sklearn.pipeline.Pipeline: Fitted pipeline (imputer + scaler + MLP).
@@ -83,20 +100,13 @@ def train_mlp(X_train, y_train, val_size=0.15):
     X_trn_processed = scaler.fit_transform(imputer.fit_transform(X_trn))
     X_val_processed = scaler.transform(imputer.transform(X_val))
 
+    # Merge provided params on top of defaults (backward compatible)
+    merged = {**DEFAULT_PARAMS, **(params or {})}
+
     mlp = MLPClassifier(
-        hidden_layer_sizes=(128, 64, 32),
-        activation="tanh",
-        solver="adam",
-        alpha=1e-2,              # L2 regularization
-        batch_size=256,
-        learning_rate="adaptive",
-        learning_rate_init=3e-3,
-        max_iter=300,
-        early_stopping=True,
-        validation_fraction=0.13,   # ~10% of original data for internal monitoring
-        n_iter_no_change=20,
         random_state=RANDOM_STATE,
         verbose=True,
+        **merged,
     )
 
     logger.info("Training MLP classifier...")

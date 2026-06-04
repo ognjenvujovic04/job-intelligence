@@ -21,6 +21,20 @@ logger = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 
+# Default tunable hyperparameters (safe to override via `params`)
+DEFAULT_PARAMS = {
+    "booster": "gbtree",
+    "learning_rate": 0.05,
+    "max_depth": 0,
+    "max_leaves": 63,
+    "min_child_weight": 30,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.1,
+    "reg_lambda": 0.1,
+    "n_estimators": 2000,
+}
+
 
 # =========================================================
 # CLASS WEIGHT COMPUTATION
@@ -54,7 +68,7 @@ def _compute_sample_weights(y):
 # TRAINING
 # =========================================================
 
-def train_xgboost(X_train, y_train, val_size=0.15):
+def train_xgboost(X_train, y_train, val_size=0.15, params=None):
     """
     Train an XGBoost multiclass classifier with early stopping.
 
@@ -66,6 +80,8 @@ def train_xgboost(X_train, y_train, val_size=0.15):
         y_train (pd.Series): Training target (integer-encoded).
         val_size (float): Fraction of training data held out for
             early-stopping validation.
+        params (dict, optional): Hyperparameter overrides merged on top of
+            `DEFAULT_PARAMS` (shallow merge).
 
     Returns:
         xgb.XGBClassifier: Fitted model.
@@ -84,26 +100,19 @@ def train_xgboost(X_train, y_train, val_size=0.15):
     )
 
     sample_weights = _compute_sample_weights(y_trn)
+    # Merge provided params on top of defaults (backward compatible)
+    merged_params = {**DEFAULT_PARAMS, **(params or {})}
 
     model = xgb.XGBClassifier(
         objective="multi:softmax",
         num_class=num_classes,
         eval_metric="mlogloss",
-        booster="gbtree",
-        learning_rate=0.05,
-        max_depth=0,
-        max_leaves=63,
-        min_child_weight=30,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        reg_alpha=0.1,
-        reg_lambda=0.1,
-        n_estimators=2000,
-        early_stopping_rounds=100,
         random_state=RANDOM_STATE,
         verbosity=0,
         n_jobs=-1,
         tree_method="hist",
+        early_stopping_rounds=100,
+        **merged_params,
     )
 
     logger.info("Training XGBoost classifier...")

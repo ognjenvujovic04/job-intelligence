@@ -21,12 +21,26 @@ logger = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 
+# Default tunable hyperparameters (safe to override via `params`)
+DEFAULT_PARAMS = {
+    "boosting_type": "gbdt",
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "max_depth": -1,
+    "min_child_samples": 30,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.1,
+    "reg_lambda": 0.1,
+    "class_weight": "balanced",
+    "n_estimators": 2000,
+}
 
 # =========================================================
 # TRAINING
 # =========================================================
 
-def train_lightgbm(X_train, y_train, val_size=0.15):
+def train_lightgbm(X_train, y_train, val_size=0.15, params=None):
     """
     Train a LightGBM multiclass classifier with early stopping.
 
@@ -38,11 +52,14 @@ def train_lightgbm(X_train, y_train, val_size=0.15):
         y_train (pd.Series): Training target (integer-encoded).
         val_size (float): Fraction of training data held out for
             early-stopping validation.
+        params (dict, optional): Hyperparameter overrides merged on top of
+            `DEFAULT_PARAMS`.
 
     Returns:
         lgb.LGBMClassifier: Fitted model.
     """
     num_classes = y_train.nunique()
+    merged_params = {**DEFAULT_PARAMS, **(params or {})}
 
     X_trn, X_val, y_trn, y_val = train_test_split(
         X_train, y_train,
@@ -55,24 +72,15 @@ def train_lightgbm(X_train, y_train, val_size=0.15):
         f"LightGBM train/val split: train={len(X_trn)}, val={len(X_val)}"
     )
 
+    # Structural parameters are kept explicit and internal
     model = lgb.LGBMClassifier(
         objective="multiclass",
         num_class=num_classes,
         metric="multi_logloss",
-        boosting_type="gbdt",
-        learning_rate=0.05,
-        num_leaves=63,
-        max_depth=-1,
-        min_child_samples=30,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        reg_alpha=0.1,
-        reg_lambda=0.1,
-        class_weight="balanced",
-        n_estimators=2000,
         random_state=RANDOM_STATE,
         verbose=-1,
         n_jobs=-1,
+        **merged_params,
     )
 
     logger.info("Training LightGBM classifier...")
