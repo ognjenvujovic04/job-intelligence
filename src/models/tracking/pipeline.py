@@ -1,0 +1,130 @@
+import logging
+import os
+
+import pandas as pd
+
+from .config import DEFAULT_TARGET, configure_mlflow
+from .experiment import run_experiment
+
+logger = logging.getLogger(__name__)
+
+
+def run_default_experiment(
+    train_path=None,
+    test_path=None,
+    target=DEFAULT_TARGET,
+    model_type="lightgbm",
+    params=None,
+    run_name=None,
+    tags=None,
+    tracking_uri=None,
+    experiment_name=None,
+    register_model_name=None,
+    val_size=0.15,
+):
+    """
+    Load data, configure MLflow, train, evaluate, and log in one call.
+
+    This is handy for quick experiments from the command line or a notebook
+    when you just want to change ``params`` or ``model_type`` and see the
+    results show up in the MLflow UI.
+
+    Parameters:
+        train_path (str): Path to training CSV.
+        test_path (str): Path to test CSV.
+        target (str): Name of the target column.
+        model_type (str): One of "lightgbm", "xgboost", "catboost",
+            "sklearn_logreg", "sklearn_mlp", "tabnet".
+        params (dict or None): Hyperparameter overrides.
+        run_name (str or None): MLflow run name.
+        tags (dict or None): Extra metadata tags.
+        tracking_uri (str or None): MLflow tracking URI.
+        experiment_name (str or None): Experiment name.
+        register_model_name (str or None): Model-registry name.
+        val_size (float): Validation split fraction.
+
+    Returns:
+        dict: Summary from ``run_experiment``.
+    """
+    train_fn, predict_fn, fi_fn, mlflow_type = _resolve_model_functions(model_type)
+
+    from ...utils.evaluation import compute_metrics
+
+    if register_model_name is None:
+        register_model_name = f"{model_type}-exp-level-classifier"
+
+    # Resolve default paths relative to the repository root
+    # (three levels up from this file: src/models/tracking -> ../../.. -> repo root)
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    if train_path is None:
+        train_path = os.path.join(base_dir, "data", "processed", "feature_matrix_train.csv")
+    if test_path is None:
+        test_path = os.path.join(base_dir, "data", "processed", "feature_matrix_test.csv")
+
+    df_train = pd.read_csv(train_path)
+    df_test = pd.read_csv(test_path)
+
+    df_train = df_train.dropna(subset=[target])
+    df_test = df_test.dropna(subset=[target])
+
+    y_train = df_train[target].astype(int)
+    y_test = df_test[target].astype(int)
+    X_train = df_train.drop(columns=[target])
+    X_test = df_test.drop(columns=[target])
+
+    configure_mlflow(tracking_uri=tracking_uri, experiment_name=experiment_name)
+
+    return run_experiment(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        train_fn=train_fn,
+        eval_fn=compute_metrics,
+        feature_importance_fn=fi_fn,
+        predict_fn=predict_fn,
+        model_type=mlflow_type,
+        params=params,
+        run_name=run_name,
+        tags=tags,
+        register_model_name=register_model_name,
+        val_size=val_size,
+    )
+
+
+def _resolve_model_functions(model_type):
+    """
+    Return (train_fn, predict_fn, feature_importance_fn, mlflow_type)
+    for the given model_type string.
+
+    predict_fn is None when the standard model.predict() interface works.
+    """
+    if model_type == "lightgbm":
+        from ..train_lightgbm import train_lightgbm, get_feature_importance
+        return train_lightgbm, None, get_feature_importance, "lightgbm"
+
+    elif model_type == "xgboost":
+        from ..train_xgboost import train_xgboost, get_feature_importance
+        return train_xgboost, None, get_feature_importance, "xgboost"
+
+    elif model_type == "catboost":
+        from ..train_catboost import train_catboost, predict as cb_predict, get_feature_importance
+        return train_catboost, cb_predict, get_feature_importance, "catboost"
+
+    elif model_type in ("sklearn_logreg", "logreg", "logistic_regression"):
+        from ..train_logreg import build_logreg_pipeline, get_feature_importance
+        return build_logreg_pipeline, None, get_feature_importance, "sklearn"
+
+    elif model_type in ("sklearn_mlp", "mlp"):
+        from ..train_mlp import train_mlp, get_feature_importance
+        return train_mlp, None, get_feature_importance, "sklearn"
+
+    elif model_type == "tabnet":
+        from ..train_tabnet import train_tabnet, predict_tabnet, get_feature_importance
+        return train_tabnet, predict_tabnet, get_feature_importance, "tabnet"
+
+    else:
+        raise ValueError(
+            f"Unknown model_type '{model_type}'. Supported types: "
+            "lightgbm, xgboost, catboost, sklearn_logreg, sklearn_mlp, tabnet"
+        )
