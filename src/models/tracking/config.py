@@ -1,12 +1,20 @@
 import logging
+import os
 
 import mlflow
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TRACKING_URI = "sqlite:///mlflow.db"
+# Absolute path so the same DB is used regardless of working directory
+# (running from notebooks/ vs. the project root both resolve to the same file)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+_DB_PATH = os.path.join(_REPO_ROOT, "mlflow.db").replace("\\", "/")
+DEFAULT_TRACKING_URI = f"sqlite:///{_DB_PATH}"
 DEFAULT_EXPERIMENT_NAME = "experience-level-classification"
 DEFAULT_TARGET = "experience_level_ord"
+
+DEFAULT_REGRESSION_EXPERIMENT_NAME = "salary-regression"
+DEFAULT_REGRESSION_TARGET = "normalized_salary"
 
 
 def configure_mlflow(tracking_uri=None, experiment_name=None):

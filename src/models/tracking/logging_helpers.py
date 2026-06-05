@@ -12,11 +12,11 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def _log_tags(tags, run_name, model_type="lightgbm"):
+def _log_tags(tags, run_name, model_type="lightgbm", task="multiclass_classification"):
     """Log user-supplied tags plus a few automatic ones."""
     auto_tags = {
         "model_type": model_type,
-        "task": "multiclass_classification",
+        "task": task,
         "run_name": run_name,
     }
     if tags:
@@ -136,6 +136,41 @@ def _log_feature_importance(importance):
     plt.close(fig)
 
 
+def _log_residual_plot(y_true, y_pred):
+    """Save actual-vs-predicted and residual distribution plots as PNG artifacts."""
+    import numpy as np
+
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    residuals = y_true - y_pred
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    ax = axes[0]
+    ax.scatter(y_true, y_pred, alpha=0.15, s=5, color="steelblue")
+    lims = [y_true.min(), np.percentile(y_true, 99)]
+    ax.plot(lims, lims, "r--", lw=1.5, label="Perfect")
+    ax.set_xlabel("Actual")
+    ax.set_ylabel("Predicted")
+    ax.set_title("Actual vs Predicted")
+    ax.legend()
+
+    ax = axes[1]
+    ax.hist(residuals, bins=80, color="steelblue", edgecolor="white", alpha=0.8)
+    ax.axvline(0, color="red", linestyle="--", lw=1.5)
+    ax.set_xlabel("Residual (Actual - Predicted)")
+    ax.set_ylabel("Count")
+    ax.set_title("Residual Distribution")
+
+    plt.tight_layout()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "residual_plot.png")
+        fig.savefig(path, dpi=150)
+        mlflow.log_artifact(path, artifact_path="plots")
+    plt.close(fig)
+
+
 def _log_model(model, register_name, model_type="lightgbm"):
     """
     Log the trained model using the appropriate MLflow flavour.
@@ -144,7 +179,7 @@ def _log_model(model, register_name, model_type="lightgbm"):
     so the correct serialisation format is used and the model shows up
     with the right type in the MLflow Models UI.
     """
-    log_kwargs = {"artifact_path": register_name or "model"}
+    log_kwargs = {"name": register_name or "model"}
     if register_name:
         log_kwargs["registered_model_name"] = register_name
 

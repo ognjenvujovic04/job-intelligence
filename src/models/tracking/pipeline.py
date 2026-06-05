@@ -3,7 +3,12 @@ import os
 
 import pandas as pd
 
-from .config import DEFAULT_TARGET, configure_mlflow
+from .config import (
+    DEFAULT_REGRESSION_EXPERIMENT_NAME,
+    DEFAULT_REGRESSION_TARGET,
+    DEFAULT_TARGET,
+    configure_mlflow,
+)
 from .experiment import run_experiment
 
 logger = logging.getLogger(__name__)
@@ -111,6 +116,99 @@ def run_default_experiment(
     )
 
 
+def run_default_regression_experiment(
+    dataset="v2/feature_matrix_train_v2.csv",
+    target=DEFAULT_REGRESSION_TARGET,
+    params=None,
+    run_name=None,
+    tags=None,
+    tracking_uri=None,
+    experiment_name=None,
+    register_model_name=None,
+    val_size=0.2,
+    train_path=None,
+    test_path=None,
+    exclude_cols=None,
+):
+    """
+    Load data, configure MLflow, train a LightGBM regressor, and log in one call.
+
+    Parameters:
+        dataset (str): Training CSV path relative to ``data/processed/``.
+        target (str): Name of the continuous target column.
+        params (dict or None): Hyperparameter overrides.
+        run_name (str or None): MLflow run name.
+        tags (dict or None): Extra metadata tags.
+        tracking_uri (str or None): MLflow tracking URI.
+        experiment_name (str or None): Experiment name.
+            Defaults to ``DEFAULT_REGRESSION_EXPERIMENT_NAME``.
+        register_model_name (str or None): Model-registry name.
+        val_size (float): Validation split fraction.
+        train_path (str or None): Full path override for the training CSV.
+        test_path (str or None): Full path override for the test CSV.
+        exclude_cols (list[str] or None): Extra columns to drop before training
+            (in addition to the target). Useful for dropping leaky features
+            such as target-encoded salary columns.
+
+    Returns:
+        dict: Summary from ``run_experiment``.
+    """
+    from ..train_lightgbm import (
+        get_feature_importance,
+        train_lgbm_regressor,
+    )
+    from ...utils.evaluation import compute_regression_metrics
+
+    if register_model_name is None:
+        register_model_name = "lgbm-salary-regressor"
+
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    processed_dir = os.path.join(base_dir, "data", "processed")
+    if train_path is None:
+        train_path = os.path.join(processed_dir, *dataset.replace("\\", "/").split("/"))
+    if test_path is None:
+        test_dataset = dataset.replace("train", "test")
+        test_path = os.path.join(processed_dir, *test_dataset.replace("\\", "/").split("/"))
+
+    df_train = pd.read_csv(train_path)
+    df_test = pd.read_csv(test_path)
+
+    # Keep only rows with a known salary target
+    df_train = df_train.dropna(subset=[target])
+    df_test = df_test.dropna(subset=[target])
+
+    drop_cols = [target] + (exclude_cols or [])
+    y_train = df_train[target]
+    y_test = df_test[target]
+    X_train = df_train.drop(columns=[c for c in drop_cols if c in df_train.columns])
+    X_test = df_test.drop(columns=[c for c in drop_cols if c in df_test.columns])
+
+    configure_mlflow(
+        tracking_uri=tracking_uri,
+        experiment_name=experiment_name or DEFAULT_REGRESSION_EXPERIMENT_NAME,
+    )
+
+    return run_experiment(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        train_fn=train_lgbm_regressor,
+        eval_fn=compute_regression_metrics,
+        feature_importance_fn=get_feature_importance,
+        model_type="lightgbm",
+        task="regression",
+        params=params,
+        run_name=run_name,
+        tags=tags,
+        register_model_name=register_model_name,
+        val_size=val_size,
+        dataset=dataset,
+        dataset_name=os.path.basename(train_path),
+        train_source=train_path,
+    )
+
+
 def _resolve_model_functions(model_type):
     """
     Return (train_fn, predict_fn, feature_importance_fn, mlflow_type)
@@ -119,8 +217,8 @@ def _resolve_model_functions(model_type):
     predict_fn is None when the standard model.predict() interface works.
     """
     if model_type == "lightgbm":
-        from ..train_lightgbm import train_lightgbm, get_feature_importance
-        return train_lightgbm, None, get_feature_importance, "lightgbm"
+        from ..train_lightgbm import train_lgbm_classifier, get_feature_importance
+        return train_lgbm_classifier, None, get_feature_importance, "lightgbm"
 
     elif model_type == "xgboost":
         from ..train_xgboost import train_xgboost, get_feature_importance

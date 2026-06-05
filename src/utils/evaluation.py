@@ -10,7 +10,9 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     mean_absolute_error,
+    mean_squared_error,
     precision_score,
+    r2_score,
     recall_score,
 )
 
@@ -90,6 +92,30 @@ def compute_metrics(y_true, y_pred, label_map=None):
     )
 
     return metrics
+
+
+# =========================================================
+# REGRESSION METRICS
+# =========================================================
+
+def compute_regression_metrics(y_true, y_pred):
+    """
+    Compute standard regression metrics.
+
+    Parameters:
+        y_true (array-like): True continuous values.
+        y_pred (array-like): Predicted continuous values.
+
+    Returns:
+        dict: mae, rmse, r2.
+    """
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = mean_squared_error(y_true, y_pred) ** 0.5
+    r2 = r2_score(y_true, y_pred)
+
+    logger.info(f"MAE: {mae:,.2f} | RMSE: {rmse:,.2f} | R2: {r2:.4f}")
+
+    return {"mae": mae, "rmse": rmse, "r2": r2}
 
 
 # =========================================================

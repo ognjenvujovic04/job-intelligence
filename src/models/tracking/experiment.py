@@ -10,6 +10,7 @@ from .logging_helpers import (
     _log_metrics,
     _log_model,
     _log_params,
+    _log_residual_plot,
     _log_tags,
 )
 
@@ -26,6 +27,7 @@ def run_experiment(
     feature_importance_fn=None,
     predict_fn=None,
     model_type="lightgbm",
+    task="classification",
     params=None,
     run_name=None,
     tags=None,
@@ -107,7 +109,7 @@ def run_experiment(
         run_id = run.info.run_id
         logger.info(f"MLflow run started | name='{run_name}' | id={run_id}")
 
-        _log_tags(tags, run_name, model_type)
+        _log_tags(tags, run_name, model_type, task=task)
         _log_params(merged_params, val_size, X_train, model_type)
         if dataset is not None:
             mlflow.log_param("dataset", dataset)
@@ -128,7 +130,10 @@ def run_experiment(
         metrics = eval_fn(y_test, y_pred)
         _log_metrics(metrics)
 
-        _log_confusion_matrix(y_test, y_pred)
+        if task == "regression":
+            _log_residual_plot(y_test, y_pred)
+        else:
+            _log_confusion_matrix(y_test, y_pred)
 
         if feature_importance_fn is not None:
             importance = feature_importance_fn(

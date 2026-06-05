@@ -1,13 +1,13 @@
 """
-LightGBM Multiclass Classifier
-================================
-Trains a LightGBM model to predict experience_level_ord (6 classes).
+LightGBM Models
+===============
+Trains LightGBM models for classification and regression tasks.
 
-Designed to be imported from a notebook:
-    from models.train_lightgbm import train_lightgbm, get_feature_importance
+    from models.train_lightgbm import train_lgbm_classifier, get_feature_importance
+    from models.train_lightgbm import train_lgbm_regressor, get_feature_importance
 
 LightGBM handles NaN natively, so no imputation is needed.
-Unlike XGBoost, LightGBM supports class_weight='balanced' directly,
+For classification, LightGBM supports class_weight='balanced' directly,
 so no manual sample weight computation is required.
 """
 
@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 
 RANDOM_STATE = 42
 
-# Default tunable hyperparameters (safe to override via `params`)
-DEFAULT_PARAMS = {
+CLASSIFIER_DEFAULT_PARAMS = {
     "boosting_type": "gbdt",
     "learning_rate": 0.05,
     "num_leaves": 63,
@@ -36,11 +35,24 @@ DEFAULT_PARAMS = {
     "n_estimators": 2000,
 }
 
+REGRESSOR_DEFAULT_PARAMS = {
+    "boosting_type": "gbdt",
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "max_depth": -1,
+    "min_child_samples": 30,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "n_estimators": 2000,
+}
+
 # =========================================================
 # TRAINING
 # =========================================================
 
-def train_lightgbm(X_train, y_train, val_size=0.15, params=None):
+def train_lgbm_classifier(X_train, y_train, val_size=0.15, params=None):
     """
     Train a LightGBM multiclass classifier with early stopping.
 
@@ -53,13 +65,13 @@ def train_lightgbm(X_train, y_train, val_size=0.15, params=None):
         val_size (float): Fraction of training data held out for
             early-stopping validation.
         params (dict, optional): Hyperparameter overrides merged on top of
-            `DEFAULT_PARAMS`.
+            CLASSIFIER_DEFAULT_PARAMS.
 
     Returns:
         lgb.LGBMClassifier: Fitted model.
     """
     num_classes = y_train.nunique()
-    merged_params = {**DEFAULT_PARAMS, **(params or {})}
+    merged_params = {**CLASSIFIER_DEFAULT_PARAMS, **(params or {})}
 
     X_trn, X_val, y_trn, y_val = train_test_split(
         X_train, y_train,
@@ -72,7 +84,6 @@ def train_lightgbm(X_train, y_train, val_size=0.15, params=None):
         f"LightGBM train/val split: train={len(X_trn)}, val={len(X_val)}"
     )
 
-    # Structural parameters are kept explicit and internal
     model = lgb.LGBMClassifier(
         objective="multiclass",
         num_class=num_classes,
@@ -99,6 +110,53 @@ def train_lightgbm(X_train, y_train, val_size=0.15, params=None):
     return model
 
 
+def train_lgbm_regressor(X_train, y_train, val_size=0.15, params=None):
+    """
+    Train a LightGBM regression model with early stopping.
+
+    Parameters:
+        X_train (pd.DataFrame): Training features.
+        y_train (pd.Series): Continuous target (e.g. normalized_salary).
+        val_size (float): Fraction held out for early-stopping validation.
+        params (dict or None): Hyperparameter overrides merged on top of
+            REGRESSOR_DEFAULT_PARAMS.
+
+    Returns:
+        lgb.LGBMRegressor: Fitted model.
+    """
+    merged_params = {**REGRESSOR_DEFAULT_PARAMS, **(params or {})}
+
+    X_trn, X_val, y_trn, y_val = train_test_split(
+        X_train, y_train,
+        test_size=val_size,
+        random_state=RANDOM_STATE,
+    )
+
+    logger.info(f"LightGBM regressor train/val split: train={len(X_trn)}, val={len(X_val)}")
+
+    model = lgb.LGBMRegressor(
+        objective="regression",
+        metric="mae",
+        random_state=RANDOM_STATE,
+        verbose=-1,
+        n_jobs=-1,
+        **merged_params,
+    )
+
+    model.fit(
+        X_trn,
+        y_trn,
+        eval_set=[(X_val, y_val)],
+        callbacks=[
+            lgb.log_evaluation(period=100),
+            lgb.early_stopping(stopping_rounds=100),
+        ],
+    )
+
+    logger.info(f"Early stopping at iteration {model.best_iteration_}")
+    return model
+
+
 # =========================================================
 # FEATURE IMPORTANCE
 # =========================================================
@@ -107,12 +165,10 @@ def get_feature_importance(model, feature_names, top_n=15):
     """
     Extract top N features by split-based importance.
 
-    LightGBM's default importance_type is 'split' (number of times
-    a feature is used across all trees). This differs from XGBoost's
-    default gain-based importance, so keep that in mind when comparing.
+    Works for both LGBMClassifier and LGBMRegressor.
 
     Parameters:
-        model (lgb.LGBMClassifier): Fitted LightGBM model.
+        model: Fitted LightGBM model.
         feature_names (list[str]): Feature column names.
         top_n (int): Number of top features to return.
 
@@ -155,7 +211,7 @@ if __name__ == "__main__":
     X_train = df_train.drop(columns=[TARGET])
     X_test = df_test.drop(columns=[TARGET])
 
-    model = train_lightgbm(X_train, y_train)
+    model = train_lgbm_classifier(X_train, y_train)
     y_pred = model.predict(X_test)
 
     print("\n=== Classification Report ===")
