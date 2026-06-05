@@ -24,6 +24,14 @@ def _log_tags(tags, run_name, model_type="lightgbm"):
     mlflow.set_tags(auto_tags)
 
 
+def _log_dataset(X_train, y_train, name, source):
+    """Log the training dataset via mlflow.log_input (populates the Datasets column)."""
+    df = X_train.copy()
+    df["_target"] = y_train.values
+    dataset = mlflow.data.from_pandas(df, source=source, name=name, targets="_target")
+    mlflow.log_input(dataset, context="training")
+
+
 def _log_params(params, val_size, X_train, model_type="lightgbm"):
     """Log hyperparameters plus dataset metadata."""
     mlflow.log_param("model_type", model_type)

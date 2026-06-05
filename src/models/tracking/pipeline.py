@@ -47,6 +47,7 @@ def run_default_experiment(
         dict: Summary from ``run_experiment``.
     """
     train_fn, predict_fn, fi_fn, mlflow_type = _resolve_model_functions(model_type)
+    mlp_model = model_type in ("sklearn_mlp", "mlp")
 
     from ...utils.evaluation import compute_metrics
 
@@ -72,6 +73,12 @@ def run_default_experiment(
     X_train = df_train.drop(columns=[target])
     X_test = df_test.drop(columns=[target])
 
+    # MLP's get_feature_importance requires X_test/y_test for permutation importance;
+    # wrap it into the standard (model, feature_names, top_n) interface now that data is loaded.
+    if mlp_model and fi_fn is not None:
+        _base_fi = fi_fn
+        fi_fn = lambda m, fn, n: _base_fi(m, X_test, y_test, fn, n)
+
     configure_mlflow(tracking_uri=tracking_uri, experiment_name=experiment_name)
 
     return run_experiment(
@@ -89,6 +96,8 @@ def run_default_experiment(
         tags=tags,
         register_model_name=register_model_name,
         val_size=val_size,
+        dataset_name=os.path.basename(train_path),
+        train_source=train_path,
     )
 
 
@@ -113,7 +122,9 @@ def _resolve_model_functions(model_type):
 
     elif model_type in ("sklearn_logreg", "logreg", "logistic_regression"):
         from ..train_logreg import build_logreg_pipeline, get_feature_importance
-        return build_logreg_pipeline, None, get_feature_importance, "sklearn"
+        def _logreg_train(X_train, y_train, val_size=None, params=None):
+            return build_logreg_pipeline(X_train, y_train, **(params or {}))
+        return _logreg_train, None, get_feature_importance, "sklearn"
 
     elif model_type in ("sklearn_mlp", "mlp"):
         from ..train_mlp import train_mlp, get_feature_importance

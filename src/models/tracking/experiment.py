@@ -5,6 +5,7 @@ import mlflow
 
 from .logging_helpers import (
     _log_confusion_matrix,
+    _log_dataset,
     _log_feature_importance,
     _log_metrics,
     _log_model,
@@ -31,6 +32,8 @@ def run_experiment(
     register_model_name=None,
     val_size=0.15,
     top_n_features=15,
+    dataset_name=None,
+    train_source=None,
 ):
     """
     Execute a single tracked training run inside MLflow.
@@ -77,6 +80,10 @@ def run_experiment(
             is also registered under this name in the MLflow Model Registry.
         val_size (float): Validation fraction passed through to *train_fn*.
         top_n_features (int): Number of top features to log.
+        dataset_name (str or None): Display name for the training dataset logged
+            via ``mlflow.log_input`` (shows in the MLflow Datasets column).
+        train_source (str or None): Source URI / file path for the dataset.
+            Defaults to *dataset_name* when omitted.
 
     Returns:
         dict: A summary with keys ``run_id``, ``metrics``, ``model``,
@@ -99,6 +106,8 @@ def run_experiment(
 
         _log_tags(tags, run_name, model_type)
         _log_params(merged_params, val_size, X_train, model_type)
+        if dataset_name is not None:
+            _log_dataset(X_train, y_train, dataset_name, train_source or dataset_name)
 
         model = train_fn(X_train, y_train, val_size=val_size, params=merged_params)
 
