@@ -10,8 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_default_experiment(
-    train_path=None,
-    test_path=None,
+    dataset="v1/feature_matrix_train.csv",
     target=DEFAULT_TARGET,
     model_type="lightgbm",
     params=None,
@@ -21,6 +20,8 @@ def run_default_experiment(
     experiment_name=None,
     register_model_name=None,
     val_size=0.15,
+    train_path=None,
+    test_path=None,
 ):
     """
     Load data, configure MLflow, train, evaluate, and log in one call.
@@ -30,8 +31,10 @@ def run_default_experiment(
     results show up in the MLflow UI.
 
     Parameters:
-        train_path (str): Path to training CSV.
-        test_path (str): Path to test CSV.
+        dataset (str): Path to the training CSV relative to ``data/processed/``.
+            The test CSV is derived by replacing ``"train"`` with ``"test"`` in
+            this string.  Defaults to ``"v1/feature_matrix_train.csv"``.
+            Example: ``"v2/feature_matrix_train_v2.csv"``.
         target (str): Name of the target column.
         model_type (str): One of "lightgbm", "xgboost", "catboost",
             "sklearn_logreg", "sklearn_mlp", "tabnet".
@@ -42,6 +45,10 @@ def run_default_experiment(
         experiment_name (str or None): Experiment name.
         register_model_name (str or None): Model-registry name.
         val_size (float): Validation split fraction.
+        train_path (str or None): Full path override for the training CSV.
+            Supersedes ``dataset`` when provided.
+        test_path (str or None): Full path override for the test CSV.
+            Supersedes the auto-derived test path when provided.
 
     Returns:
         dict: Summary from ``run_experiment``.
@@ -54,13 +61,15 @@ def run_default_experiment(
     if register_model_name is None:
         register_model_name = f"{model_type}-exp-level-classifier"
 
-    # Resolve default paths relative to the repository root
+    # Resolve paths relative to the repository root
     # (three levels up from this file: src/models/tracking -> ../../.. -> repo root)
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    processed_dir = os.path.join(base_dir, "data", "processed")
     if train_path is None:
-        train_path = os.path.join(base_dir, "data", "processed", "feature_matrix_train.csv")
+        train_path = os.path.join(processed_dir, *dataset.replace("\\", "/").split("/"))
     if test_path is None:
-        test_path = os.path.join(base_dir, "data", "processed", "feature_matrix_test.csv")
+        test_dataset = dataset.replace("train", "test")
+        test_path = os.path.join(processed_dir, *test_dataset.replace("\\", "/").split("/"))
 
     df_train = pd.read_csv(train_path)
     df_test = pd.read_csv(test_path)
@@ -96,6 +105,7 @@ def run_default_experiment(
         tags=tags,
         register_model_name=register_model_name,
         val_size=val_size,
+        dataset=dataset,
         dataset_name=os.path.basename(train_path),
         train_source=train_path,
     )

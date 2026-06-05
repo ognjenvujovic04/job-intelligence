@@ -25,6 +25,10 @@ if __name__ == "__main__":
         help="Which model to train (default: lightgbm).",
     )
     parser.add_argument(
+        "--dataset", type=str, default="v1/feature_matrix_train.csv",
+        help="Training CSV path relative to data/processed/ (default: v1/feature_matrix_train.csv).",
+    )
+    parser.add_argument(
         "--run-name", type=str, default=None,
         help="Descriptive run name for the MLflow UI.",
     )
@@ -65,6 +69,7 @@ if __name__ == "__main__":
             print(f"{'='*60}")
             try:
                 result = run_default_experiment(
+                    dataset=args.dataset,
                     model_type=mt,
                     params=cli_params or None,
                     run_name=args.run_name or mt,
@@ -79,6 +84,7 @@ if __name__ == "__main__":
                 logging.getLogger(__name__).exception(f"Failed to run {mt}")
     else:
         result = run_default_experiment(
+            dataset=args.dataset,
             model_type=args.model_type,
             params=cli_params or None,
             run_name=args.run_name,
