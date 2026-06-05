@@ -30,3 +30,4 @@ xgboost
 catboost
 pytorch-tabnet
 mlflow
+tensorflow
