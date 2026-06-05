@@ -15,7 +15,7 @@ class_weights, since CatBoost does not accept a 'balanced' string.
 import logging
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier, Pool
+from catboost import CatBoostClassifier, CatBoostRegressor, Pool
 from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,15 @@ RANDOM_STATE = 42
 
 # Default tunable hyperparameters (safe to override via `params`)
 DEFAULT_PARAMS = {
+    "iterations": 2000,
+    "learning_rate": 0.05,
+    "depth": 6,
+    "l2_leaf_reg": 3.0,
+    "bootstrap_type": "MVS",
+    "subsample": 0.8,
+}
+
+REGRESSOR_DEFAULT_PARAMS = {
     "iterations": 2000,
     "learning_rate": 0.05,
     "depth": 6,
@@ -148,8 +157,59 @@ def train_catboost(X_train, y_train, val_size=0.15, params=None):
     return model
 
 
+def train_catboost_regressor(X_train, y_train, val_size=0.15, params=None):
+    """
+    Train a CatBoost regression model with early stopping.
+
+    Boolean columns are automatically cast to int before training.
+
+    Parameters:
+        X_train (pd.DataFrame): Training features.
+        y_train (pd.Series): Continuous target (e.g. normalized_salary).
+        val_size (float): Fraction held out for early-stopping validation.
+        params (dict, optional): Hyperparameter overrides merged on top of
+            `REGRESSOR_DEFAULT_PARAMS` (shallow merge).
+
+    Returns:
+        CatBoostRegressor: Fitted model.
+    """
+    X_train = _cast_bool_columns(X_train.copy())
+
+    X_trn, X_val, y_trn, y_val = train_test_split(
+        X_train, y_train,
+        test_size=val_size,
+        random_state=RANDOM_STATE,
+    )
+
+    logger.info(
+        f"CatBoost regressor train/val split: train={len(X_trn)}, val={len(X_val)}"
+    )
+
+    merged_params = {**REGRESSOR_DEFAULT_PARAMS, **(params or {})}
+
+    model = CatBoostRegressor(
+        loss_function="RMSE",
+        eval_metric="MAE",
+        random_seed=RANDOM_STATE,
+        verbose=100,
+        early_stopping_rounds=100,
+        task_type="CPU",
+        allow_writing_files=False,
+        **merged_params,
+    )
+
+    train_pool = Pool(X_trn, label=y_trn)
+    eval_pool = Pool(X_val, label=y_val)
+
+    logger.info("Training CatBoost regressor...")
+    model.fit(train_pool, eval_set=eval_pool)
+
+    logger.info(f"Early stopping at iteration {model.get_best_iteration()}")
+    return model
+
+
 # =========================================================
-# PREDICTION HELPER
+# PREDICTION HELPERS
 # =========================================================
 
 def predict(model, X_test):
@@ -169,6 +229,21 @@ def predict(model, X_test):
     """
     X_test = _cast_bool_columns(X_test.copy())
     return model.predict(X_test).flatten().astype(int)
+
+
+def predict_regressor(model, X_test):
+    """
+    Predict continuous values from a CatBoostRegressor, applying bool casting.
+
+    Parameters:
+        model (CatBoostRegressor): Fitted model.
+        X_test (pd.DataFrame): Test features.
+
+    Returns:
+        np.ndarray: 1D float predictions.
+    """
+    X_test = _cast_bool_columns(X_test.copy())
+    return model.predict(X_test).flatten()
 
 
 # =========================================================

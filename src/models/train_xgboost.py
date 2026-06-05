@@ -35,6 +35,19 @@ DEFAULT_PARAMS = {
     "n_estimators": 2000,
 }
 
+REGRESSOR_DEFAULT_PARAMS = {
+    "booster": "gbtree",
+    "learning_rate": 0.05,
+    "max_depth": 0,
+    "max_leaves": 63,
+    "min_child_weight": 30,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "n_estimators": 2000,
+}
+
 
 # =========================================================
 # CLASS WEIGHT COMPUTATION
@@ -121,6 +134,61 @@ def train_xgboost(X_train, y_train, val_size=0.15, params=None):
         X_trn,
         y_trn,
         sample_weight=sample_weights,
+        eval_set=[(X_val, y_val)],
+        verbose=100,
+    )
+
+    try:
+        best_iter = model.best_iteration
+        logger.info(f"Early stopping at iteration {best_iter}")
+    except AttributeError:
+        logger.info("No early stopping triggered, used all estimators.")
+
+    return model
+
+
+def train_xgboost_regressor(X_train, y_train, val_size=0.15, params=None):
+    """
+    Train an XGBoost regression model with early stopping.
+
+    Parameters:
+        X_train (pd.DataFrame): Training features.
+        y_train (pd.Series): Continuous target (e.g. normalized_salary).
+        val_size (float): Fraction held out for early-stopping validation.
+        params (dict, optional): Hyperparameter overrides merged on top of
+            `REGRESSOR_DEFAULT_PARAMS` (shallow merge).
+
+    Returns:
+        xgb.XGBRegressor: Fitted model.
+    """
+    X_trn, X_val, y_trn, y_val = train_test_split(
+        X_train, y_train,
+        test_size=val_size,
+        random_state=RANDOM_STATE,
+    )
+
+    logger.info(
+        f"XGBoost regressor train/val split: train={len(X_trn)}, val={len(X_val)}"
+    )
+
+    merged_params = {**REGRESSOR_DEFAULT_PARAMS, **(params or {})}
+
+    model = xgb.XGBRegressor(
+        objective="reg:squarederror",
+        eval_metric="mae",
+        random_state=RANDOM_STATE,
+        verbosity=0,
+        n_jobs=-1,
+        tree_method="hist",
+        early_stopping_rounds=100,
+        **merged_params,
+    )
+
+    logger.info("Training XGBoost regressor...")
+
+    model.fit(
+        X_trn,
+        y_trn,
         eval_set=[(X_val, y_val)],
         verbose=100,
     )
