@@ -31,3 +31,4 @@ catboost
 pytorch-tabnet
 mlflow
 tensorflow
+optuna
