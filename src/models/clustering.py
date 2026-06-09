@@ -1,7 +1,10 @@
 # src/clustering.py
 
+import os
 import time
+import tempfile
 import mlflow
+from .tracking.logging_helpers import _log_tags
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,8 +14,11 @@ from sklearn.cluster import KMeans, HDBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from wordcloud import WordCloud
 import warnings
-import os
 warnings.filterwarnings("ignore")
+
+
+K_RANGE = range(2, 70, 4)
+HDBSCAN_MIN_CLUSTER_SIZES = [500, 750, 1000, 1250, 1500]
 
 
 # =========================================================
@@ -25,7 +31,6 @@ def load_and_prepare(feature_path, cleaned_path, drop_high_missing=True):
     df_clean = pd.read_csv(cleaned_path)
 
     # Use job_id to align df_clean to the exact rows (and order) in the feature matrix.
-    # The feature matrix is a subset of cleaned_job_postings (80% split + noise removal).
     if 'job_id' in df_feat.columns:
         job_ids = df_feat['job_id'].values
         df_clean = (
@@ -35,23 +40,19 @@ def load_and_prepare(feature_path, cleaned_path, drop_high_missing=True):
         )
         df_feat = df_feat.drop(columns=['job_id'])
 
-    # Drop columns with too much missing data for clustering
     drop_cols = []
     if drop_high_missing:
         drop_cols += ["log_applies", "apply_rate"]
-    # Drop target-encoded cols (leak supervised target)
     drop_cols += ["state_salary_enc", "fips_salary_enc"]
 
     df_feat = df_feat.drop(columns=[c for c in drop_cols if c in df_feat.columns])
 
-    # Impute remaining missing (log_views ~1.3%, experience_level_ord ~23.8%)
     imputer = SimpleImputer(strategy="median")
     X = pd.DataFrame(
         imputer.fit_transform(df_feat),
         columns=df_feat.columns
     )
 
-    # Scale continuous features
     scaler = StandardScaler()
     X_scaled = pd.DataFrame(
         scaler.fit_transform(X),
@@ -79,18 +80,19 @@ def get_model(name, **params):
 # METRICS
 # =========================================================
 
-def compute_metrics(X, labels, sample_size=10_000):
+def compute_metrics(X, labels, model=None, sample_size=10_000):
     """Compute internal clustering metrics on a sample. Skips if only 1 cluster."""
-    n_clusters = len(set(labels) - {-1})  # exclude noise label
-    if n_clusters < 2:
-        return {"n_clusters": n_clusters}
+    n_total = len(labels)
+    n_clusters = len(set(labels) - {-1})
+    n_noise = int((labels == -1).sum())
 
-    # Exclude noise points
+    if n_clusters < 2:
+        return {"n_clusters": n_clusters, "n_noise": n_noise, "noise_ratio": n_noise / n_total}
+
     mask = labels != -1
     X_valid = X[mask]
     labels_valid = labels[mask]
 
-    # Sample once; reuse for all three metrics so scores are comparable
     n = len(X_valid)
     actual_sample = min(sample_size, n)
     rng = np.random.default_rng(42)
@@ -99,23 +101,25 @@ def compute_metrics(X, labels, sample_size=10_000):
     l_s = labels_valid[idx]
 
     print(f"  Computing metrics on {actual_sample:,} / {n:,} points ...")
-    return {
+    metrics = {
         "n_clusters": n_clusters,
-        "n_noise": int((labels == -1).sum()),
+        "n_noise": n_noise,
+        "noise_ratio": n_noise / n_total,
         "silhouette": float(silhouette_score(X_s, l_s)),
         "davies_bouldin": float(davies_bouldin_score(X_s, l_s)),
         "calinski_harabasz": float(calinski_harabasz_score(X_s, l_s)),
     }
+    if model is not None and hasattr(model, "inertia_"):
+        metrics["inertia"] = float(model.inertia_)
+    return metrics
 
 
 # =========================================================
 # INTERPRETATION / ARTIFACTS
 # =========================================================
 
-def plot_feature_distributions(X, labels, df_clean, output_dir="artifacts"):
-    """Box plots of key features per cluster."""
-    os.makedirs(output_dir, exist_ok=True)
-    
+def plot_feature_distributions(X, labels, df_clean):
+    """Box plots of key features per cluster. Returns figure."""
     key_features = ["log_views", "title_length", "desc_word_count",
                     "domain_similarity", "company_freq", "experience_level_ord"]
     key_features = [f for f in key_features if f in X.columns]
@@ -127,17 +131,13 @@ def plot_feature_distributions(X, labels, df_clean, output_dir="artifacts"):
         ax.set_title(feat)
     plt.suptitle("Feature Distributions per Cluster", fontsize=14)
     plt.tight_layout()
-    path = f"{output_dir}/feature_distributions.png"
-    plt.savefig(path, dpi=150)
-    plt.close()
-    return path
+    return fig
 
 
-def plot_word_clouds(labels, df_clean, column="title", output_dir="artifacts"):
-    """Generate a word cloud per cluster for a text column."""
-    os.makedirs(output_dir, exist_ok=True)
+def plot_word_clouds(labels, df_clean, column="title"):
+    """Generate a word cloud per cluster for a text column. Returns figure."""
     unique_labels = sorted(set(labels) - {-1})
-    
+
     fig, axes = plt.subplots(1, len(unique_labels), figsize=(6 * len(unique_labels), 5))
     if len(unique_labels) == 1:
         axes = [axes]
@@ -151,10 +151,7 @@ def plot_word_clouds(labels, df_clean, column="title", output_dir="artifacts"):
 
     plt.suptitle(f"Word Clouds: {column}", fontsize=14)
     plt.tight_layout()
-    path = f"{output_dir}/wordcloud_{column}.png"
-    plt.savefig(path, dpi=150)
-    plt.close()
-    return path
+    return fig
 
 
 def get_centroid_representatives(X, labels, df_clean, n=5):
@@ -166,18 +163,17 @@ def get_centroid_representatives(X, labels, df_clean, n=5):
         centroid = cluster_data.mean(axis=0).values
         distances = np.linalg.norm(cluster_data.values - centroid, axis=1)
         closest_idx = cluster_data.index[np.argsort(distances)[:n]]
-        results[cl] = df_clean.loc[closest_idx, 
-                      ["title", "company_name", "location", 
+        results[cl] = df_clean.loc[closest_idx,
+                      ["title", "company_name", "location",
                        "formatted_work_type", "formatted_experience_level"]]
     return results
 
 
-def log_centroid_representatives(representatives, output_dir="artifacts"):
-    """Save representative rows to CSV for MLflow logging."""
-    os.makedirs(output_dir, exist_ok=True)
+def log_centroid_representatives(representatives, output_dir):
+    """Save representative rows to CSV in output_dir and return paths."""
     paths = []
     for cl, df_repr in representatives.items():
-        path = f"{output_dir}/cluster_{cl}_representatives.csv"
+        path = os.path.join(output_dir, f"cluster_{cl}_representatives.csv")
         df_repr.to_csv(path, index=False)
         paths.append(path)
     return paths
@@ -193,11 +189,9 @@ def cluster_profile(X, labels, df_clean):
     for cl in sorted(set(labels) - {-1}):
         mask = labels == cl
         row = {"cluster": cl, "size": int(mask.sum())}
-        
-        # Mean of numeric features
+
         row.update(X[mask].mean().to_dict())
-        
-        # Top title keyword, work type, experience level from original data
+
         subset = df_clean[mask]
         if "formatted_work_type" in subset.columns:
             row["top_work_type"] = subset["formatted_work_type"].mode().iloc[0] \
@@ -217,7 +211,7 @@ def cluster_profile(X, labels, df_clean):
 def run_clustering(
     model_name="kmeans",
     model_params=None,
-    feature_path="data/processed/v5/feature_matrix_train.csv",
+    feature_path="data/processed/v6/feature_matrix_train.csv",
     cleaned_path="data/processed/cleaned_job_postings.csv",
     experiment_name="clustering-analysis",
 ):
@@ -249,51 +243,153 @@ def run_clustering(
         # 3. Metrics
         print("[3/4] Computing metrics ...")
         t0 = time.time()
-        metrics = compute_metrics(X.values, labels)
+        metrics = compute_metrics(X.values, labels, model=model)
         print(f"  {metrics}  ({time.time()-t0:.1f}s)")
+        _log_tags({}, run_tag, model_type=model_name, task="clustering")
+        dataset_name = os.path.splitext(os.path.basename(feature_path))[0]
+        dataset = mlflow.data.from_pandas(
+            X.reset_index(drop=True), source=feature_path, name=dataset_name
+        )
+        mlflow.log_input(dataset, context="training")
         mlflow.log_params({
-            "model_name": model_name,
-            "dataset": os.path.splitext(os.path.basename(feature_path))[0],
+            "n_features": X.shape[1],
+            "n_samples": X.shape[0],
             **model_params,
         })
         mlflow.log_metrics(metrics)
 
-        # 4. Artifacts
+        # 4. Artifacts (MLflow only — no local files)
         n_clusters = metrics.get("n_clusters", 0)
         if n_clusters > 50:
             print(f"[4/4] Skipping artifacts ({n_clusters} clusters > 50).")
         else:
             print("[4/4] Generating artifacts ...")
-            wc_title = plot_word_clouds(labels, df_clean, "title")
-            print(f"  word cloud (title): {wc_title}")
-            wc_desc = plot_word_clouds(labels, df_clean, "description")
-            print(f"  word cloud (description): {wc_desc}")
-            feat_dist = plot_feature_distributions(X, labels, df_clean)
-            print(f"  feature distributions: {feat_dist}")
+
+            wc_title_fig = plot_word_clouds(labels, df_clean, "title")
+            mlflow.log_figure(wc_title_fig, "wordcloud_title.png")
+            plt.close(wc_title_fig)
+            print("  word cloud (title): logged")
+
+            wc_desc_fig = plot_word_clouds(labels, df_clean, "description")
+            mlflow.log_figure(wc_desc_fig, "wordcloud_description.png")
+            plt.close(wc_desc_fig)
+            print("  word cloud (description): logged")
+
+            feat_dist_fig = plot_feature_distributions(X, labels, df_clean)
+            mlflow.log_figure(feat_dist_fig, "feature_distributions.png")
+            plt.close(feat_dist_fig)
+            print("  feature distributions: logged")
 
             representatives = get_centroid_representatives(X, labels, df_clean)
-            repr_paths = log_centroid_representatives(representatives)
-            print(f"  representatives: {len(repr_paths)} files")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                profile = cluster_profile(X, labels, df_clean)
+                profile_path = os.path.join(tmp_dir, "cluster_profiles.csv")
+                profile.to_csv(profile_path, index=False)
+                mlflow.log_artifact(profile_path)
 
-            profile = cluster_profile(X, labels, df_clean)
-            profile.to_csv("artifacts/cluster_profiles.csv", index=False)
+                repr_paths = log_centroid_representatives(representatives, tmp_dir)
+                for p in repr_paths:
+                    mlflow.log_artifact(p)
 
-            mlflow.log_artifact(wc_title)
-            mlflow.log_artifact(wc_desc)
-            mlflow.log_artifact(feat_dist)
-            mlflow.log_artifact("artifacts/cluster_profiles.csv")
-            for p in repr_paths:
-                mlflow.log_artifact(p)
+            print(f"  profile + {len(representatives)} representative files: logged")
 
         print(f"\nRun complete. Metrics: {metrics}")
         return labels, metrics
-    
+
+
+# =========================================================
+# SWEEP PLOTS
+# =========================================================
+
+def plot_kmeans_sweep(k_range, inertias, silhouette_scores, experiment_name="clustering-analysis"):
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    axes[0].plot(list(k_range), inertias, "o-", color="steelblue", linewidth=2)
+    axes[0].set_title("Elbow Method (Inertia)")
+    axes[0].set_xlabel("Number of Clusters (k)")
+    axes[0].set_ylabel("Inertia")
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].plot(list(k_range), silhouette_scores, "o-", color="darkorange", linewidth=2)
+    axes[1].set_title("Silhouette Score vs k")
+    axes[1].set_xlabel("Number of Clusters (k)")
+    axes[1].set_ylabel("Silhouette Score")
+    axes[1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    os.makedirs("artifacts", exist_ok=True)
+    plt.savefig("artifacts/kmeans_sweep.png", dpi=150)
+
+    mlflow.set_experiment(experiment_name)
+    with mlflow.start_run(run_name="kmeans_sweep_summary"):
+        mlflow.log_figure(fig, "kmeans_sweep.png")
+
+    plt.show()
+    plt.close(fig)
+
+
+def plot_hdbscan_sweep(min_cluster_sizes, n_clusters_list, noise_ratios, experiment_name="clustering-analysis"):
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    axes[0].plot(min_cluster_sizes, n_clusters_list, "o-", color="steelblue", linewidth=2)
+    axes[0].set_title("Number of Clusters vs min_cluster_size")
+    axes[0].set_xlabel("min_cluster_size")
+    axes[0].set_ylabel("Number of Clusters")
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].plot(min_cluster_sizes, noise_ratios, "o-", color="darkorange", linewidth=2)
+    axes[1].set_title("Noise Ratio vs min_cluster_size")
+    axes[1].set_xlabel("min_cluster_size")
+    axes[1].set_ylabel("Noise Ratio")
+    axes[1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    os.makedirs("artifacts", exist_ok=True)
+    plt.savefig("artifacts/hdbscan_sweep.png", dpi=150)
+
+    mlflow.set_experiment(experiment_name)
+    with mlflow.start_run(run_name="hdbscan_sweep_summary"):
+        mlflow.log_figure(fig, "hdbscan_sweep.png")
+
+    plt.show()
+    plt.close(fig)
+
 
 if __name__ == "__main__":
-    # Try different K values
-    for k in range(8, 40, 2):
-        run_clustering("kmeans", {"n_clusters": k, "random_state": 42, "n_init": 10})
+    EXPERIMENT = "clustering-analysis"
+    FEATURE_PATH = "data/processed/v6/feature_matrix.csv"
+    CLEANED_PATH = "data/processed/cleaned_job_postings.csv"
 
-    # Sweep min_cluster_size for HDBSCAN
-    for min_cluster_size in [500, 750, 1000, 1250, 1500]:
-        run_clustering("hdbscan", {"min_cluster_size": min_cluster_size, "min_samples": 10})
+    # KMeans sweep — collect inertia + silhouette across k values
+    inertias = []
+    silhouette_scores = []
+    for k in K_RANGE:
+        _, metrics = run_clustering(
+            "kmeans",
+            {"n_clusters": k, "random_state": 42, "n_init": 10},
+            feature_path=FEATURE_PATH,
+            cleaned_path=CLEANED_PATH,
+            experiment_name=EXPERIMENT,
+        )
+        inertias.append(metrics.get("inertia", float("nan")))
+        silhouette_scores.append(metrics.get("silhouette", float("nan")))
+
+    plot_kmeans_sweep(K_RANGE, inertias, silhouette_scores, EXPERIMENT)
+
+    # HDBSCAN sweep — collect n_clusters + noise_ratio across min_cluster_size values
+    hdbscan_n_clusters = []
+    hdbscan_noise_ratios = []
+    for min_cluster_size in HDBSCAN_MIN_CLUSTER_SIZES:
+        _, metrics = run_clustering(
+            "hdbscan",
+            {"min_cluster_size": min_cluster_size, "min_samples": 10},
+            feature_path=FEATURE_PATH,
+            cleaned_path=CLEANED_PATH,
+            experiment_name=EXPERIMENT,
+        )
+        hdbscan_n_clusters.append(metrics.get("n_clusters", 0))
+        hdbscan_noise_ratios.append(metrics.get("noise_ratio", float("nan")))
+
+    plot_hdbscan_sweep(HDBSCAN_MIN_CLUSTER_SIZES, hdbscan_n_clusters, hdbscan_noise_ratios, EXPERIMENT)
