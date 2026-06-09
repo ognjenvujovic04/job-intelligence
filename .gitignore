@@ -20,6 +20,7 @@ data/processed/*
 data/precomputed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/processed/VERSIONS.md
 
 # Environment
 .env

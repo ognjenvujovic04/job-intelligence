@@ -32,3 +32,4 @@ pytorch-tabnet
 mlflow
 tensorflow
 optuna
+wordcloud

@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 RAW_DATA = "../../data/raw/postings.csv"
 CLEANED_DATA = "../../data/processed/cleaned_job_postings.csv"
 DOMAIN_DATA = "../../data/precomputed/domain_probabilities.csv"
-TRAIN_OUTPUT = "../../data/processed/feature_matrix_train.csv"
-TEST_OUTPUT = "../../data/processed/feature_matrix_test.csv"
+TRAIN_OUTPUT = "../../data/processed/v5/feature_matrix_train.csv"
+TEST_OUTPUT = "../../data/processed/v5/feature_matrix_test.csv"
 
 
 def _configure_root_logging(verbose=True):

@@ -548,8 +548,8 @@ def drop_redundant_columns(df):
         pd.DataFrame
     """
     cols_to_drop = [
-        # identifiers
-        'job_id',
+        # # identifiers
+        # 'job_id',
         # raw text (features already extracted)
         'title', 'description',
         # intermediate / temp columns
