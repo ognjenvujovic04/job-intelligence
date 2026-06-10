@@ -8,17 +8,33 @@ from .tracking.logging_helpers import _log_tags
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.cluster import KMeans, HDBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-from wordcloud import WordCloud
+from wordcloud import WordCloud, STOPWORDS
+from collections import Counter
+import re
 import warnings
+
+_EXTRA_STOPWORDS = {
+    "experience", "work", "will", "team", "skills", "including",
+    "ability", "job", "business", "management", "required", "company",
+    "role","position","time","years",
+    "may", "must", "requirements", "benefits", "opportunity", "opportunities",
+    "employment", "support", "information", "ensure", "environment",
+    "status", "working", "strong", "related", "new", "based", "duties",
+    "employee", "employees", "project", "knowledge", "client", "product", 
+    "customer", "application", "perform", "able", "projects", "clients",
+    "need", "provide", "equal", "program", "member", "provided", "service"
+}
+_STOPWORDS = STOPWORDS | _EXTRA_STOPWORDS
 warnings.filterwarnings("ignore")
 
 
-K_RANGE = range(2, 70, 4)
-HDBSCAN_MIN_CLUSTER_SIZES = [500, 750, 1000, 1250, 1500]
+K_RANGE = [26]
+# HDBSCAN_MIN_CLUSTER_SIZES = [500, 750, 1000, 1250, 1500]
 
 
 # =========================================================
@@ -40,6 +56,12 @@ def load_and_prepare(feature_path, cleaned_path, drop_high_missing=True):
         )
         df_feat = df_feat.drop(columns=['job_id'])
 
+    # Extract normalized salary from the feature matrix before scaling and
+    # attach it to df_clean so it's available for profiling without distorting
+    # the clustering features.
+    if "normalized_salary" in df_feat.columns:
+        df_clean = df_clean.copy()
+        df_clean["normalized_salary"] = df_feat["normalized_salary"].values
     drop_cols = []
     if drop_high_missing:
         drop_cols += ["log_applies", "apply_rate"]
@@ -144,7 +166,7 @@ def plot_word_clouds(labels, df_clean, column="title"):
 
     for ax, cl in zip(axes, unique_labels):
         text = " ".join(df_clean.loc[labels == cl, column].dropna().astype(str))
-        wc = WordCloud(width=600, height=400, background_color="white").generate(text)
+        wc = WordCloud(width=600, height=400, background_color="white", stopwords=_STOPWORDS).generate(text)
         ax.imshow(wc, interpolation="bilinear")
         ax.set_title(f"Cluster {cl}")
         ax.axis("off")
@@ -152,6 +174,18 @@ def plot_word_clouds(labels, df_clean, column="title"):
     plt.suptitle(f"Word Clouds: {column}", fontsize=14)
     plt.tight_layout()
     return fig
+
+
+def get_cluster_top_words(labels, df_clean, column="title", n=15):
+    """Return a DataFrame of top n words per cluster, excluding stopwords."""
+    rows = []
+    for cl in sorted(set(labels) - {-1}):
+        text = " ".join(df_clean.loc[labels == cl, column].dropna().astype(str))
+        tokens = re.findall(r"[a-zA-Z]+", text.lower())
+        counts = Counter(t for t in tokens if t not in _STOPWORDS and len(t) > 1)
+        for rank, (word, freq) in enumerate(counts.most_common(n), start=1):
+            rows.append({"cluster": cl, "rank": rank, "word": word, "count": freq})
+    return pd.DataFrame(rows)
 
 
 def get_centroid_representatives(X, labels, df_clean, n=5):
@@ -163,9 +197,7 @@ def get_centroid_representatives(X, labels, df_clean, n=5):
         centroid = cluster_data.mean(axis=0).values
         distances = np.linalg.norm(cluster_data.values - centroid, axis=1)
         closest_idx = cluster_data.index[np.argsort(distances)[:n]]
-        results[cl] = df_clean.loc[closest_idx,
-                      ["title", "company_name", "location",
-                       "formatted_work_type", "formatted_experience_level"]]
+        results[cl] = df_clean.loc[closest_idx]
     return results
 
 
@@ -208,12 +240,24 @@ def cluster_profile(X, labels, df_clean):
 # MAIN RUN
 # =========================================================
 
+def save_labels(labels, df_clean, output_path):
+    """Save cluster labels aligned with job_id to a CSV file."""
+    df_labels = pd.DataFrame({
+        "job_id": df_clean["job_id"].values,
+        "cluster": labels,
+    })
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+    df_labels.to_csv(output_path, index=False)
+    return df_labels
+
+
 def run_clustering(
     model_name="kmeans",
     model_params=None,
     feature_path="data/processed/v6/feature_matrix_train.csv",
     cleaned_path="data/processed/cleaned_job_postings.csv",
     experiment_name="clustering-analysis",
+    labels_output_path=None,
 ):
     if model_params is None:
         model_params = {"n_clusters": 5, "random_state": 42, "n_init": 10}
@@ -240,6 +284,15 @@ def run_clustering(
         sizes = np.bincount(labels[labels >= 0])
         print(f"  Done in {time.time()-t0:.1f}s  |  cluster sizes: {sizes.tolist()}")
 
+        # 2b. Save labels
+        with tempfile.TemporaryDirectory() as _label_tmp:
+            _label_path = os.path.join(_label_tmp, "cluster_labels.csv")
+            save_labels(labels, df_clean, _label_path)
+            mlflow.log_artifact(_label_path)
+        if labels_output_path is not None:
+            save_labels(labels, df_clean, labels_output_path)
+            print(f"  Labels saved to {labels_output_path}")
+
         # 3. Metrics
         print("[3/4] Computing metrics ...")
         t0 = time.time()
@@ -265,15 +318,41 @@ def run_clustering(
         else:
             print("[4/4] Generating artifacts ...")
 
-            wc_title_fig = plot_word_clouds(labels, df_clean, "title")
-            mlflow.log_figure(wc_title_fig, "wordcloud_title.png")
-            plt.close(wc_title_fig)
-            print("  word cloud (title): logged")
+            with tempfile.TemporaryDirectory() as _wc_tmp:
+                title_png = os.path.join(_wc_tmp, "wordcloud_title.png")
+                wc_title_fig = plot_word_clouds(labels, df_clean, "title")
+                wc_title_fig.savefig(title_png, dpi=150, bbox_inches="tight")
+                plt.close(wc_title_fig)
+                mlflow.log_artifact(title_png)
 
-            wc_desc_fig = plot_word_clouds(labels, df_clean, "description")
-            mlflow.log_figure(wc_desc_fig, "wordcloud_description.png")
-            plt.close(wc_desc_fig)
-            print("  word cloud (description): logged")
+                desc_png = os.path.join(_wc_tmp, "wordcloud_description.png")
+                wc_desc_fig = plot_word_clouds(labels, df_clean, "description")
+                wc_desc_fig.savefig(desc_png, dpi=150, bbox_inches="tight")
+                plt.close(wc_desc_fig)
+                mlflow.log_artifact(desc_png)
+
+                img_t = Image.open(title_png)
+                img_d = Image.open(desc_png)
+                combined = Image.new(
+                    "RGB",
+                    (max(img_t.width, img_d.width), img_t.height + img_d.height),
+                    "white",
+                )
+                combined.paste(img_t, (0, 0))
+                combined.paste(img_d, (0, img_t.height))
+                combined_png = os.path.join(_wc_tmp, "wordcloud_combined.png")
+                combined.save(combined_png)
+                mlflow.log_artifact(combined_png)
+
+            print("  word clouds (title + description + combined): logged")
+
+            with tempfile.TemporaryDirectory() as _wc_tmp:
+                for col in ("title", "description"):
+                    top_words = get_cluster_top_words(labels, df_clean, column=col)
+                    p = os.path.join(_wc_tmp, f"top_words_{col}.csv")
+                    top_words.to_csv(p, index=False)
+                    mlflow.log_artifact(p)
+            print("  top words (title + description): logged")
 
             feat_dist_fig = plot_feature_distributions(X, labels, df_clean)
             mlflow.log_figure(feat_dist_fig, "feature_distributions.png")
@@ -376,20 +455,20 @@ if __name__ == "__main__":
         inertias.append(metrics.get("inertia", float("nan")))
         silhouette_scores.append(metrics.get("silhouette", float("nan")))
 
-    plot_kmeans_sweep(K_RANGE, inertias, silhouette_scores, EXPERIMENT)
+    # plot_kmeans_sweep(K_RANGE, inertias, silhouette_scores, EXPERIMENT)
 
     # HDBSCAN sweep — collect n_clusters + noise_ratio across min_cluster_size values
-    hdbscan_n_clusters = []
-    hdbscan_noise_ratios = []
-    for min_cluster_size in HDBSCAN_MIN_CLUSTER_SIZES:
-        _, metrics = run_clustering(
-            "hdbscan",
-            {"min_cluster_size": min_cluster_size, "min_samples": 10},
-            feature_path=FEATURE_PATH,
-            cleaned_path=CLEANED_PATH,
-            experiment_name=EXPERIMENT,
-        )
-        hdbscan_n_clusters.append(metrics.get("n_clusters", 0))
-        hdbscan_noise_ratios.append(metrics.get("noise_ratio", float("nan")))
+    # hdbscan_n_clusters = []
+    # hdbscan_noise_ratios = []
+    # for min_cluster_size in HDBSCAN_MIN_CLUSTER_SIZES:
+    #     _, metrics = run_clustering(
+    #         "hdbscan",
+    #         {"min_cluster_size": min_cluster_size, "min_samples": 10},
+    #         feature_path=FEATURE_PATH,
+    #         cleaned_path=CLEANED_PATH,
+    #         experiment_name=EXPERIMENT,
+    #     )
+    #     hdbscan_n_clusters.append(metrics.get("n_clusters", 0))
+    #     hdbscan_noise_ratios.append(metrics.get("noise_ratio", float("nan")))
 
-    plot_hdbscan_sweep(HDBSCAN_MIN_CLUSTER_SIZES, hdbscan_n_clusters, hdbscan_noise_ratios, EXPERIMENT)
+    # plot_hdbscan_sweep(HDBSCAN_MIN_CLUSTER_SIZES, hdbscan_n_clusters, hdbscan_noise_ratios, EXPERIMENT)
