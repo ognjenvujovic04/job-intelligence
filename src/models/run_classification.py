@@ -88,7 +88,7 @@ def _load_model():
     import mlflow
     from mlflow import MlflowClient
 
-    from models.tracking.config import configure_mlflow
+    from src.models.tracking.config import configure_mlflow
 
     configure_mlflow(experiment_name=EXPERIMENT_NAME)
 
@@ -187,25 +187,22 @@ if __name__ == "__main__":
     N_ROWS = 50
     EXPERIENCE_COL = "formatted_experience_level"
 
-    src = os.path.join(_REPO_ROOT, "src")
-    src_data = os.path.join(src, "data")
     postings_csv = os.path.join(_REPO_ROOT, "data", "raw", "postings.csv")
 
-    sys.path.insert(0, src)
+    # Put the repo root on sys.path so the `src.*` package imports below resolve
+    # when this file is run directly (python src/models/run_classification.py).
+    sys.path.insert(0, _REPO_ROOT)
 
-    # Load raw postings up front (absolute path), before changing cwd. Keep the
-    # first N_ROWS rows that have a non-null experience level so we have ground
-    # truth to score against.
+    # Keep the first N_ROWS rows that have a non-null experience level so we have
+    # ground truth to score against.
     df_raw = pd.read_csv(postings_csv)
     df_raw = df_raw[df_raw[EXPERIENCE_COL].notna()].head(N_ROWS).reset_index(drop=True)
     print(f"Loaded {len(df_raw):,} postings with known experience level")
 
-    # run_pipeline.py uses bare imports and relative artifact paths, so it must be
-    # imported with src/data on sys.path and executed with src/data as cwd.
-    sys.path.insert(0, src_data)
-    os.chdir(src_data)
-    from run_pipeline import prepare_data
-    from utils.evaluation import compute_metrics
+    # prepare_data is cwd-independent (repo-root-anchored paths + package imports),
+    # so no chdir/path juggling is needed.
+    from src.data.run_pipeline import prepare_data
+    from src.utils.evaluation import compute_metrics
 
     feature_matrix = prepare_data(df_raw, verbose=True)
 

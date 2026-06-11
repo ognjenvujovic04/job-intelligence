@@ -16,23 +16,27 @@ import os
 
 import joblib
 
-from data_cleaning_preprocessing import clean_dataframe, preprocess_dataset
-from fe_domain_classification import (
+from src.data.data_cleaning_preprocessing import clean_dataframe, preprocess_dataset
+from src.data.fe_domain_classification import (
     main as compute_domain_similarities,
     compute_domain_sim_df,
     ensure_prototype_embeddings,
 )
-from feature_engineering import feature_engineering_pipeline, transform_features
+from src.data.feature_engineering import feature_engineering_pipeline, transform_features
 
 logger = logging.getLogger(__name__)
 
-RAW_DATA = "../../data/raw/postings.csv"
-CLEANED_DATA = "../../data/processed/cleaned_job_postings.csv"
-DOMAIN_DATA = "../../data/precomputed/domain_probabilities.csv"
-TRAIN_OUTPUT = "../../data/processed/v5/feature_matrix_train.csv"
-TEST_OUTPUT = "../../data/processed/v5/feature_matrix_test.csv"
+# Repo-root-anchored absolute paths so this module works regardless of cwd
+# (src/data is two levels below the repo root).
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-PRECOMPUTED_DIR = "../../data/precomputed"
+RAW_DATA = os.path.join(_REPO_ROOT, "data", "raw", "postings.csv")
+CLEANED_DATA = os.path.join(_REPO_ROOT, "data", "processed", "cleaned_job_postings.csv")
+DOMAIN_DATA = os.path.join(_REPO_ROOT, "data", "precomputed", "domain_probabilities.csv")
+TRAIN_OUTPUT = os.path.join(_REPO_ROOT, "data", "processed", "v5", "feature_matrix_train.csv")
+TEST_OUTPUT = os.path.join(_REPO_ROOT, "data", "processed", "v5", "feature_matrix_test.csv")
+
+PRECOMPUTED_DIR = os.path.join(_REPO_ROOT, "data", "precomputed")
 PREP_ARTIFACTS = os.path.join(PRECOMPUTED_DIR, "prep_artifacts.joblib")
 FEATURE_COLUMNS = os.path.join(PRECOMPUTED_DIR, "feature_columns.json")
 
@@ -159,7 +163,7 @@ def train_pipeline(
     return df_train, df_test
 
 
-def prepare_data(df, verbose=True):
+def prepare_data(df, domain_df=None, verbose=True):
     """
     Prepare new raw data for ML models using persisted training artifacts.
 
@@ -173,6 +177,11 @@ def prepare_data(df, verbose=True):
 
     Parameters:
         df (pd.DataFrame): Raw postings dataframe.
+        domain_df (pd.DataFrame): Precomputed domain similarity scores
+            ([job_id, domain_sim_*]). When provided, the BERT-based domain
+            recompute is skipped and these scores are used directly (they merge
+            on job_id, so a superset of rows is fine). When None, similarities
+            are computed in-memory via the domain model.
         verbose (bool): Enable step-by-step logging.
 
     Returns:
@@ -204,7 +213,10 @@ def prepare_data(df, verbose=True):
     logger.info("=" * 60)
     logger.info("INFERENCE 2/3: Domain Classification")
     logger.info("=" * 60)
-    domain_df = compute_domain_sim_df(cleaned)
+    if domain_df is None:
+        domain_df = compute_domain_sim_df(cleaned)
+    else:
+        logger.info("Using precomputed domain similarities (skipping recompute)")
 
     logger.info("")
     logger.info("=" * 60)

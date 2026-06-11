@@ -27,10 +27,17 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+# Repo-root-anchored absolute path so the prototype-embedding cache resolves
+# regardless of cwd (src/data is two levels below the repo root). This path is
+# read on the inference path via compute_domain_sim_df -> load_prototype_embeddings.
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 REPO_ID = "0xnbk/nbk-ats-domain-v1-en"
-INPUT_PATH = "../../data/processed/cleaned_job_postings.csv"
-OUTPUT_PATH = "../../data/precomputed/domain_probabilities.csv"
-PROTOTYPE_EMB_PATH = "../../data/precomputed/domain_prototype_embeddings.npz"
+INPUT_PATH = "../../data/precomputed/summarization/text_rank_summaries.csv"
+OUTPUT_PATH = "../../data/precomputed/summarization/text_rank_domain_probabilities.csv"
+PROTOTYPE_EMB_PATH = os.path.join(
+    _REPO_ROOT, "data", "precomputed", "domain_prototype_embeddings.npz"
+)
 BATCH_SIZE = 64
 MAX_LENGTH = 8192
 

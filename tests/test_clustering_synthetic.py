@@ -24,8 +24,6 @@ import pandas as pd
 from mlflow.models import Model
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(REPO_ROOT, "src")
-SRC_DATA = os.path.join(SRC, "data")
 SYNTHETIC_CSV = os.path.join(REPO_ROOT, "data", "raw", "synthetic_postings.csv")
 
 # Run that logged the final K-Means (k=26) pipeline in the clustering-analysis
@@ -37,8 +35,8 @@ MODEL_URI = f"runs:/{RUN_ID}/model"
 
 def main():
     # Point MLflow at the repo-root tracking DB (absolute paths, cwd-independent).
-    sys.path.insert(0, SRC)
-    from models.tracking.config import configure_mlflow
+    sys.path.insert(0, REPO_ROOT)
+    from src.models.tracking.config import configure_mlflow
 
     configure_mlflow(experiment_name="clustering-analysis")
 
@@ -52,16 +50,13 @@ def main():
     model = mlflow.sklearn.load_model(MODEL_URI)
     expected_cols = Model.load(MODEL_URI).get_input_schema().input_names()
 
-    # Load the raw postings up front (absolute path), before changing cwd.
+    # Load the raw postings (absolute path).
     df = pd.read_csv(SYNTHETIC_CSV)
     print(f"Loaded {len(df):,} synthetic postings from {SYNTHETIC_CSV}")
 
-    # run_pipeline.py uses bare imports (e.g. `from feature_engineering import ...`)
-    # and relative artifact paths ("../../data/precomputed/..."), so it must be
-    # imported with src/data on sys.path and executed with src/data as cwd.
-    sys.path.insert(0, SRC_DATA)
-    os.chdir(SRC_DATA)
-    from run_pipeline import prepare_data
+    # prepare_data is cwd-independent (repo-root-anchored paths + package imports),
+    # so no chdir is needed.
+    from src.data.run_pipeline import prepare_data
 
     # Raw postings -> model-ready feature matrix (reuses training artifacts).
     feature_matrix = prepare_data(df, verbose=True)
