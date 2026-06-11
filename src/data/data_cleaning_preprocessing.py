@@ -134,19 +134,27 @@ def handle_salary_outliers(
     df,
     salary_column='normalized_salary',
     related_salary_columns=None,
-    quantile_threshold=0.9989
+    quantile_threshold=0.9989,
+    threshold=None
 ):
     """
     Detect salary outliers and replace related salary values with NaN.
+
+    When ``threshold`` is None the cutoff is computed from the data (training
+    behaviour) and returned so it can be persisted; otherwise the provided
+    threshold is reused (inference on new data).
 
     Parameters:
         df (pd.DataFrame): Input dataframe
         salary_column (str): Column used for outlier detection
         related_salary_columns (list): Columns to nullify
-        quantile_threshold (float): Quantile threshold
+        quantile_threshold (float): Quantile threshold (used only when
+            ``threshold`` is None)
+        threshold (float): Precomputed cutoff to reuse on new data.
 
     Returns:
-        pd.DataFrame
+        (pd.DataFrame, float): Dataframe and the threshold applied (or None
+            when the salary column is absent).
     """
 
     default_salary_cols = [
@@ -163,12 +171,13 @@ def handle_salary_outliers(
     )
 
     if salary_column not in df.columns:
-        return df
+        return df, threshold
 
-    salary = df[salary_column].dropna()
-    salary = salary[salary > 0]
+    if threshold is None:
+        salary = df[salary_column].dropna()
+        salary = salary[salary > 0]
+        threshold = salary.quantile(quantile_threshold)
 
-    threshold = salary.quantile(quantile_threshold)
     outlier_mask = df[salary_column] > threshold
     outlier_count = outlier_mask.sum()
 
@@ -179,7 +188,7 @@ def handle_salary_outliers(
 
     df.loc[outlier_mask, related_salary_columns] = np.nan
 
-    return df
+    return df, threshold
 
 
 # =========================
@@ -202,6 +211,35 @@ def save_dataset(
 
 
 # =========================
+# SHARED CLEANING CORE
+# =========================
+
+def clean_dataframe(df, salary_threshold=None, remove_dupes=True):
+    """
+    Apply the core cleaning steps shared by training and inference.
+
+    Steps: drop unused columns -> (optional) remove duplicates -> normalize
+    text -> handle salary outliers. Duplicate removal is skipped for new data,
+    and the salary-outlier threshold can be reused from training.
+
+    Parameters:
+        df (pd.DataFrame): Input dataframe.
+        salary_threshold (float): Precomputed outlier cutoff to reuse. When
+            None the cutoff is computed from this dataframe.
+        remove_dupes (bool): Whether to drop duplicate rows (training only).
+
+    Returns:
+        (pd.DataFrame, float): Cleaned dataframe and the salary threshold used.
+    """
+    df = drop_columns(df)
+    if remove_dupes:
+        df = remove_duplicates(df, 'job_id')
+    df = clean_text_columns(df)
+    df, salary_threshold = handle_salary_outliers(df, threshold=salary_threshold)
+    return df, salary_threshold
+
+
+# =========================
 # COMPLETE PIPELINE
 # =========================
 
@@ -212,11 +250,15 @@ def preprocess_dataset(
 ):
     """
     Complete preprocessing pipeline.
-    
+
     Parameters:
         input_path (str): Path to raw CSV data
         output_path (str): Target path for cleaned CSV data
         verbose (bool): If True, outputs step-by-step progress to stdout. Default is True.
+
+    Returns:
+        (pd.DataFrame, float): Cleaned dataframe and the salary-outlier
+            threshold computed from the data (for persistence/reuse).
     """
     # Toggle logging state
     _configure_logging(verbose)
@@ -224,15 +266,12 @@ def preprocess_dataset(
     df = pd.read_csv(input_path)
     logger.info(f"Pipeline started. Initial dataset shape: {df.shape}")
 
-    df = drop_columns(df)
-    df = remove_duplicates(df,'job_id')
-    df = clean_text_columns(df)
-    df = handle_salary_outliers(df)
-    
+    df, salary_threshold = clean_dataframe(df, remove_dupes=True)
+
     save_dataset(df, output_path)
     logger.info(f"Pipeline finished successfully. Final dataset shape: {df.shape}")
 
-    return df
+    return df, salary_threshold
 
 
 # =========================

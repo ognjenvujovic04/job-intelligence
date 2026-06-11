@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 REPO_ID = "0xnbk/nbk-ats-domain-v1-en"
 INPUT_PATH = "../../data/processed/cleaned_job_postings.csv"
 OUTPUT_PATH = "../../data/precomputed/domain_probabilities.csv"
+PROTOTYPE_EMB_PATH = "../../data/precomputed/domain_prototype_embeddings.npz"
 BATCH_SIZE = 64
 MAX_LENGTH = 8192
 
@@ -162,7 +163,119 @@ def compute_domain_similarities(
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Model loading + prototype embeddings (persisted for reuse)
+# ---------------------------------------------------------------------------
+def load_model(repo_id: str = REPO_ID):
+    """Download/patch the model and return (tokenizer, model) in eval mode."""
+    local_path = download_and_patch_model(repo_id)
+    tokenizer = AutoTokenizer.from_pretrained(local_path)
+    model = AutoModel.from_pretrained(local_path)
+    model.eval()
+    log.info("Model loaded")
+    return tokenizer, model
+
+
+def get_prototype_embeddings(tokenizer, model, recompute=False):
+    """
+    Return prototype embeddings (and domain names), persisting them to disk.
+
+    The DOMAIN_PROTOTYPES are fixed, so their embeddings are computed once at
+    training time and saved to PROTOTYPE_EMB_PATH. Subsequent runs (e.g. the
+    inference pipeline) load them instead of re-encoding with the BERT model.
+
+    Returns:
+        (np.ndarray, list[str]): (K, D) embeddings and the K domain names.
+    """
+    domain_names = list(DOMAIN_PROTOTYPES.keys())
+
+    if not recompute and os.path.exists(PROTOTYPE_EMB_PATH):
+        data = np.load(PROTOTYPE_EMB_PATH, allow_pickle=True)
+        log.info("Loaded prototype embeddings from %s", PROTOTYPE_EMB_PATH)
+        return data["embeddings"], data["domain_names"].tolist()
+
+    prototype_texts = list(DOMAIN_PROTOTYPES.values())
+    prototype_embs = encode(prototype_texts, tokenizer, model)
+    log.info("Prototype matrix: %s", prototype_embs.shape)
+
+    os.makedirs(os.path.dirname(PROTOTYPE_EMB_PATH), exist_ok=True)
+    np.savez(
+        PROTOTYPE_EMB_PATH,
+        embeddings=prototype_embs,
+        domain_names=np.array(domain_names, dtype=object),
+    )
+    log.info("Saved prototype embeddings to %s", PROTOTYPE_EMB_PATH)
+    return prototype_embs, domain_names
+
+
+def ensure_prototype_embeddings():
+    """
+    Make sure prototype embeddings exist on disk, computing them if needed.
+
+    Cheap no-op when PROTOTYPE_EMB_PATH already exists. Otherwise loads the
+    model and encodes the 13 fixed prototypes once. Useful when the full
+    domain recomputation is skipped (e.g. the similarities CSV already exists)
+    but the inference pipeline still needs the persisted prototype embeddings.
+    """
+    if os.path.exists(PROTOTYPE_EMB_PATH):
+        return
+    log.info("Prototype embeddings missing; generating them")
+    tokenizer, model = load_model()
+    get_prototype_embeddings(tokenizer, model, recompute=True)
+
+
+def load_prototype_embeddings():
+    """
+    Load persisted prototype embeddings for inference.
+
+    Raises:
+        FileNotFoundError: when the embeddings are missing (run train_pipeline
+            first to generate them).
+    """
+    if not os.path.exists(PROTOTYPE_EMB_PATH):
+        raise FileNotFoundError(
+            f"Prototype embeddings not found at '{PROTOTYPE_EMB_PATH}'. "
+            "Run train_pipeline first to generate the precomputed artifacts."
+        )
+    data = np.load(PROTOTYPE_EMB_PATH, allow_pickle=True)
+    return data["embeddings"], data["domain_names"].tolist()
+
+
+# ---------------------------------------------------------------------------
+# Inference: domain similarities for an in-memory dataframe
+# ---------------------------------------------------------------------------
+def compute_domain_sim_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute domain similarity scores for new data, returned in memory.
+
+    Loads the BERT model and the persisted prototype embeddings, encodes the
+    descriptions in ``df``, and returns a dataframe of [job_id, domain_sim_*]
+    without writing to disk. Mirrors the columns produced by ``main``.
+
+    Parameters:
+        df (pd.DataFrame): Cleaned dataframe with 'job_id' and 'description'.
+
+    Returns:
+        pd.DataFrame
+    """
+    prototype_embs, domain_names = load_prototype_embeddings()
+
+    tokenizer, model = load_model()
+
+    descriptions = df["description"].fillna("").astype(str).tolist()
+    log.info("Encoding %d descriptions (batch_size=%d) ...", len(descriptions), BATCH_SIZE)
+    desc_embs = encode(descriptions, tokenizer, model, batch_size=BATCH_SIZE)
+
+    similarities = compute_domain_similarities(desc_embs, prototype_embs)
+
+    sim_df = pd.DataFrame(
+        np.round(similarities, 4),
+        columns=[f"domain_sim_{name}" for name in domain_names],
+    )
+    return pd.concat([df[["job_id"]].reset_index(drop=True), sim_df], axis=1)
+
+
+# ---------------------------------------------------------------------------
+# Main (training): compute + save domain similarities for the full dataset
 # ---------------------------------------------------------------------------
 def main():
     # ---- Load data ----
@@ -173,18 +286,12 @@ def main():
     descriptions = df["description"].fillna("").astype(str).tolist()
 
     # ---- Model ----
-    local_path = download_and_patch_model(REPO_ID)
+    tokenizer, model = load_model()
 
-    tokenizer = AutoTokenizer.from_pretrained(local_path)
-    model = AutoModel.from_pretrained(local_path)
-    model.eval()
-    log.info("Model loaded")
-
-    # ---- Encode prototypes ----
-    domain_names = list(DOMAIN_PROTOTYPES.keys())
-    prototype_texts = list(DOMAIN_PROTOTYPES.values())
-    prototype_embs = encode(prototype_texts, tokenizer, model)
-    log.info("Prototype matrix: %s", prototype_embs.shape)
+    # ---- Prototype embeddings (computed once and persisted) ----
+    prototype_embs, domain_names = get_prototype_embeddings(
+        tokenizer, model, recompute=True
+    )
 
     # ---- Encode all descriptions (batched) ----
     log.info("Encoding %d descriptions (batch_size=%d) ...", len(descriptions), BATCH_SIZE)

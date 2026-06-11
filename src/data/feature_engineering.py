@@ -124,39 +124,47 @@ def _extract_salary_from_description(text):
     return float(np.median(annualized_candidates))
 
 
-def extract_salary_features(df):
+def extract_salary_features(df, cap=None):
     """
     Extract salary values from description text and cap outliers.
 
     Applies regex-based salary extraction to the 'description' column,
     then caps results at the 99th percentile to remove false positives.
 
+    When ``cap`` is None the cap is computed from this dataframe (training)
+    and returned for persistence; otherwise the provided cap is reused
+    (inference on new data).
+
     Parameters:
         df (pd.DataFrame): Feature dataframe with 'description' column.
+        cap (float): Precomputed upper cap to reuse on new data.
 
     Returns:
-        pd.DataFrame
+        (pd.DataFrame, float): Dataframe and the cap applied (or None).
     """
     logger.info("Extracting salary values from description text")
     tqdm.pandas(desc="Extracting salaries from descriptions")
     df["extracted_salary"] = df["description"].progress_apply(_extract_salary_from_description)
 
-    valid_extracted = df.loc[df["extracted_salary"] > 0, "extracted_salary"]
-    if not valid_extracted.empty:
-        cap = np.percentile(valid_extracted, 99)
+    if cap is None:
+        valid_extracted = df.loc[df["extracted_salary"] > 0, "extracted_salary"]
+        if not valid_extracted.empty:
+            cap = np.percentile(valid_extracted, 99)
+
+    if cap is not None:
         df.loc[df["extracted_salary"] > cap, "extracted_salary"] = np.nan
 
     extracted_count = df["extracted_salary"].notna().sum()
     logger.info(f"  Extracted {extracted_count:,} salary values from descriptions")
 
-    return df
+    return df, cap
 
 
 # =========================================================
 # 4.2 - DOMAIN EXTRACTION (from pre-computed similarities)
 # =========================================================
 
-def merge_domain_features(df, domain_path, similarity_threshold=0.35):
+def merge_domain_features(df, domain_path=None, domain_df=None, similarity_threshold=0.35):
     """
     Load pre-computed domain similarity scores and derive domain labels.
 
@@ -166,20 +174,27 @@ def merge_domain_features(df, domain_path, similarity_threshold=0.35):
     the best score falls below the threshold. One-hot encodes the
     resulting labels and keeps the best similarity as a continuous feature.
 
+    Scores can be supplied either as a CSV path (``domain_path``, training)
+    or as an in-memory dataframe (``domain_df``, inference).
+
     Parameters:
         df (pd.DataFrame): Feature dataframe with 'job_id' column.
         domain_path (str): Path to domain_probabilities.csv.
+        domain_df (pd.DataFrame): In-memory similarity scores (overrides path).
         similarity_threshold (float): Minimum similarity to assign a domain.
 
     Returns:
         pd.DataFrame
     """
-    if not os.path.exists(domain_path):
-        logger.warning(f"Domain file not found at '{domain_path}', skipping domain features")
-        return df
-
-    logger.info(f"Loading domain similarities from '{domain_path}'")
-    df_domains = pd.read_csv(domain_path)
+    if domain_df is not None:
+        df_domains = domain_df.copy()
+        logger.info("Using in-memory domain similarities")
+    else:
+        if domain_path is None or not os.path.exists(domain_path):
+            logger.warning(f"Domain file not found at '{domain_path}', skipping domain features")
+            return df
+        logger.info(f"Loading domain similarities from '{domain_path}'")
+        df_domains = pd.read_csv(domain_path)
 
     sim_cols = [c for c in df_domains.columns if c.startswith("domain_sim_")]
     domain_names = [c.replace("domain_sim_", "") for c in sim_cols]
@@ -201,7 +216,7 @@ def merge_domain_features(df, domain_path, similarity_threshold=0.35):
         how="left",
     )
 
-    domain_dummies = pd.get_dummies(df["domain"], prefix="domain")
+    domain_dummies = pd.get_dummies(df["domain"], prefix="domain").astype(int)
     df = pd.concat([df, domain_dummies], axis=1)
 
     logger.info(
@@ -392,26 +407,32 @@ def add_engagement_features(df):
 # 5.3 - SALARY CONSOLIDATION
 # =========================================================
 
-def consolidate_salary(df, floor=10_000, cap_percentile=0.96):
+def consolidate_salary(df, floor=10_000, cap_percentile=0.96, cap=None):
     """
     Clean extracted salaries and fill missing normalized_salary values.
 
     Filters extracted salaries by a floor and a percentile cap, then
     merges them into normalized_salary where the original is missing.
 
+    When ``cap`` is None it is computed from this dataframe (training) and
+    returned for persistence; otherwise the provided cap is reused (inference).
+
     Parameters:
         df (pd.DataFrame): Feature dataframe with 'normalized_salary'
             and 'extracted_salary'.
         floor (float): Minimum salary to keep (removes false positives).
-        cap_percentile (float): Upper percentile cap for extracted values.
+        cap_percentile (float): Upper percentile cap for extracted values
+            (used only when ``cap`` is None).
+        cap (float): Precomputed upper cap to reuse on new data.
 
     Returns:
-        pd.DataFrame
+        (pd.DataFrame, float): Dataframe and the cap applied.
     """
     logger.info("Consolidating salary: merging extracted values into normalized_salary")
 
-    raw_extracted = df['extracted_salary'].dropna()
-    cap = raw_extracted.quantile(cap_percentile)
+    if cap is None:
+        raw_extracted = df['extracted_salary'].dropna()
+        cap = raw_extracted.quantile(cap_percentile)
 
     df['extracted_salary_clean'] = df['extracted_salary'].copy()
     df.loc[df['extracted_salary_clean'] < floor, 'extracted_salary_clean'] = np.nan
@@ -432,7 +453,7 @@ def consolidate_salary(df, floor=10_000, cap_percentile=0.96):
         f"  Filled {filled:,} salaries from text | "
         f"missing before: {before_missing:,} | after: {after_missing:,}"
     )
-    return df
+    return df, cap
 
 
 # =========================================================
@@ -708,7 +729,8 @@ def encode_location(df_train, df_test, smoothing=20):
         smoothing (int): Smoothing factor for target encoding.
 
     Returns:
-        (pd.DataFrame, pd.DataFrame)
+        (pd.DataFrame, pd.DataFrame, dict): train, test, and the fitted
+            artifact {'state_encoding', 'state_global_mean'}.
     """
     logger.info("Encoding location: state extraction + salary target encoding")
 
@@ -748,7 +770,29 @@ def encode_location(df_train, df_test, smoothing=20):
     df_train.drop(columns=['state', 'location'], inplace=True)
     df_test.drop(columns=['state', 'location'], inplace=True)
 
-    return df_train, df_test
+    artifact = {'state_encoding': state_encoding, 'state_global_mean': global_mean}
+    return df_train, df_test, artifact
+
+
+def apply_location_encoding(df, state_encoding, global_mean):
+    """
+    Apply a previously fitted state target encoding to new data (no fitting).
+
+    Extracts state from location, maps to the saved encoding, and fills
+    unseen/noise/NaN states with the saved global salary mean.
+
+    Parameters:
+        df (pd.DataFrame): Dataframe with a 'location' column.
+        state_encoding (pd.Series): state -> encoded salary map.
+        global_mean (float): Fallback salary mean for unseen states.
+
+    Returns:
+        pd.DataFrame
+    """
+    df['state'] = df['location'].apply(_extract_state)
+    df['state_salary_enc'] = df['state'].map(state_encoding).fillna(global_mean)
+    df.drop(columns=['state', 'location'], inplace=True)
+    return df
 
 
 # =========================================================
@@ -768,7 +812,8 @@ def encode_fips(df_train, df_test, smoothing=20):
         smoothing (int): Smoothing factor.
 
     Returns:
-        (pd.DataFrame, pd.DataFrame)
+        (pd.DataFrame, pd.DataFrame, dict): train, test, and the fitted
+            artifact {'fips_encoding', 'fips_global_mean'}.
     """
     logger.info("Target encoding FIPS codes against salary")
 
@@ -796,7 +841,30 @@ def encode_fips(df_train, df_test, smoothing=20):
         if col in df_test.columns:
             df_test.drop(columns=[col], inplace=True)
 
-    return df_train, df_test
+    artifact = {'fips_encoding': fips_encoding, 'fips_global_mean': global_mean}
+    return df_train, df_test, artifact
+
+
+def apply_fips_encoding(df, fips_encoding, global_mean):
+    """
+    Apply a previously fitted FIPS target encoding to new data (no fitting).
+
+    Unseen/missing FIPS receive the saved global salary mean. Also drops
+    zip_code (overlaps with fips), matching training behaviour.
+
+    Parameters:
+        df (pd.DataFrame): Dataframe with a 'fips' column.
+        fips_encoding (pd.Series): fips -> encoded salary map.
+        global_mean (float): Fallback salary mean for unseen codes.
+
+    Returns:
+        pd.DataFrame
+    """
+    df['fips_salary_enc'] = df['fips'].map(fips_encoding).fillna(global_mean)
+    for col in ['fips', 'zip_code']:
+        if col in df.columns:
+            df.drop(columns=[col], inplace=True)
+    return df
 
 
 # =========================================================
@@ -816,7 +884,8 @@ def frequency_encode(df_train, df_test, configs=None):
         configs (dict): Mapping of {raw_column: new_column_name}.
 
     Returns:
-        (pd.DataFrame, pd.DataFrame)
+        (pd.DataFrame, pd.DataFrame, dict): train, test, and the fitted
+            artifact {'configs', 'freq_maps'}.
     """
     default_configs = {
         'company_id':     'company_freq',
@@ -826,11 +895,13 @@ def frequency_encode(df_train, df_test, configs=None):
 
     logger.info(f"Frequency encoding: {list(configs.keys())}")
 
+    freq_maps = {}
     for raw_col, new_col in configs.items():
         if raw_col not in df_train.columns:
             continue
 
         freq_map = df_train[raw_col].value_counts()
+        freq_maps[raw_col] = freq_map
 
         df_train[new_col] = df_train[raw_col].map(freq_map).fillna(1)
         df_test[new_col] = df_test[raw_col].map(freq_map)
@@ -850,7 +921,42 @@ def frequency_encode(df_train, df_test, configs=None):
         if col in df_test.columns:
             df_test.drop(columns=[col], inplace=True)
 
-    return df_train, df_test
+    artifact = {'configs': configs, 'freq_maps': freq_maps}
+    return df_train, df_test, artifact
+
+
+def apply_frequency_encoding(df, configs, freq_maps):
+    """
+    Apply previously fitted frequency encodings to new data (no fitting).
+
+    Unseen categories and NaN both receive 1 (conservative minimum
+    frequency), matching training behaviour. Drops the raw columns and
+    company_name.
+
+    Parameters:
+        df (pd.DataFrame): Dataframe with the raw high-cardinality columns.
+        configs (dict): {raw_column: new_column_name}.
+        freq_maps (dict): {raw_column: value_counts Series} from training.
+
+    Returns:
+        pd.DataFrame
+    """
+    for raw_col, new_col in configs.items():
+        if raw_col not in df.columns:
+            continue
+
+        freq_map = freq_maps.get(raw_col)
+        df[new_col] = df[raw_col].map(freq_map)
+        unseen_mask = df[new_col].isna() & df[raw_col].notna()
+        df.loc[unseen_mask, new_col] = 1
+        df[new_col] = df[new_col].fillna(1)
+
+    drop_cols = list(configs.keys()) + ['company_name']
+    for col in drop_cols:
+        if col in df.columns:
+            df.drop(columns=[col], inplace=True)
+
+    return df
 
 
 # =========================================================
@@ -899,6 +1005,7 @@ def feature_engineering_pipeline(
     random_state=42,
     smoothing=20,
     verbose=True,
+    return_artifacts=False,
 ):
     """
     Complete feature engineering pipeline.
@@ -917,9 +1024,13 @@ def feature_engineering_pipeline(
         random_state (int): Random seed.
         smoothing (int): Smoothing factor for target encoding.
         verbose (bool): If True, prints step-by-step progress.
+        return_artifacts (bool): If True, also return the fitted artifacts
+            (salary caps, encoders, model-ready column order) for reuse on
+            new data.
 
     Returns:
-        (pd.DataFrame, pd.DataFrame): train and test feature matrices.
+        (pd.DataFrame, pd.DataFrame) or, when ``return_artifacts``,
+        (pd.DataFrame, pd.DataFrame, dict).
     """
     _configure_logging(verbose)
 
@@ -928,15 +1039,15 @@ def feature_engineering_pipeline(
 
     # -- Text feature engineering (Sections 4.1 - 4.4) --
     df_fe = df.copy()
-    df_fe = extract_salary_features(df_fe)
-    df_fe = merge_domain_features(df_fe, domain_path)
+    df_fe, extracted_salary_cap = extract_salary_features(df_fe)
+    df_fe = merge_domain_features(df_fe, domain_path=domain_path)
     df_fe = fill_experience_from_title(df_fe)
     df_fe = add_text_length_features(df_fe)
 
     # -- Numerical features (Sections 5.1 - 5.3) --
     df_fe = add_temporal_features(df_fe)
     df_fe = add_engagement_features(df_fe)
-    df_fe = consolidate_salary(df_fe)
+    df_fe, consolidate_salary_cap = consolidate_salary(df_fe)
 
     # -- Categorical encoding (Sections 6.1 - 6.3) --
     df_fe = one_hot_encode(df_fe)
@@ -948,9 +1059,9 @@ def feature_engineering_pipeline(
     df_train, df_test = split_train_test(df_fe, test_size, random_state)
 
     # -- High-cardinality encoding (Section 8, fit on train only) --
-    df_train, df_test = encode_location(df_train, df_test, smoothing)
-    df_train, df_test = encode_fips(df_train, df_test, smoothing)
-    df_train, df_test = frequency_encode(df_train, df_test)
+    df_train, df_test, loc_artifact = encode_location(df_train, df_test, smoothing)
+    df_train, df_test, fips_artifact = encode_fips(df_train, df_test, smoothing)
+    df_train, df_test, freq_artifact = frequency_encode(df_train, df_test)
 
     # -- Export (Section 9) --
     save_feature_matrices(df_train, df_test, train_output, test_output)
@@ -958,7 +1069,92 @@ def feature_engineering_pipeline(
     logger.info(
         f"Pipeline finished | train: {df_train.shape} | test: {df_test.shape}"
     )
+
+    if return_artifacts:
+        artifacts = {
+            'extracted_salary_cap': extracted_salary_cap,
+            'consolidate_salary_cap': consolidate_salary_cap,
+            **loc_artifact,
+            **fips_artifact,
+            'freq_configs': freq_artifact['configs'],
+            'freq_maps': freq_artifact['freq_maps'],
+            'feature_columns': list(df_train.columns),
+        }
+        return df_train, df_test, artifacts
+
     return df_train, df_test
+
+
+# =========================================================
+# INFERENCE: transform new data with persisted artifacts
+# =========================================================
+
+def transform_features(df, domain_df, artifacts):
+    """
+    Transform a cleaned raw dataframe into the model-ready feature matrix,
+    reusing artifacts fitted during training (no re-fitting, no leakage).
+
+    Runs the same stateless transforms as the training pipeline, applies the
+    persisted salary caps and high-cardinality encoders, then reindexes the
+    output to the exact training column schema (missing one-hot columns are
+    filled with 0).
+
+    Parameters:
+        df (pd.DataFrame): Cleaned dataframe (output of clean_dataframe).
+        domain_df (pd.DataFrame): In-memory domain similarity scores
+            ([job_id, domain_sim_*]) for the same rows.
+        artifacts (dict): Persisted training artifacts (see
+            feature_engineering_pipeline with return_artifacts=True).
+
+    Returns:
+        pd.DataFrame: Feature matrix aligned to artifacts['feature_columns'].
+    """
+    df_fe = df.copy()
+
+    # -- Text feature engineering (stateless + saved caps) --
+    df_fe, _ = extract_salary_features(df_fe, cap=artifacts['extracted_salary_cap'])
+    df_fe = merge_domain_features(df_fe, domain_df=domain_df)
+    df_fe = fill_experience_from_title(df_fe)
+    df_fe = add_text_length_features(df_fe)
+
+    # -- Numerical features --
+    df_fe = add_temporal_features(df_fe)
+    df_fe = add_engagement_features(df_fe)
+    df_fe, _ = consolidate_salary(df_fe, cap=artifacts['consolidate_salary_cap'])
+
+    # -- Categorical encoding --
+    df_fe = one_hot_encode(df_fe)
+    df_fe = ordinal_encode_experience(df_fe)
+    df_fe = encode_remote_allowed(df_fe)
+
+    # -- Drop redundant columns (no split on new data) --
+    df_fe = drop_redundant_columns(df_fe)
+
+    # -- High-cardinality encoding (apply saved maps only) --
+    df_fe = apply_location_encoding(
+        df_fe, artifacts['state_encoding'], artifacts['state_global_mean']
+    )
+    df_fe = apply_fips_encoding(
+        df_fe, artifacts['fips_encoding'], artifacts['fips_global_mean']
+    )
+    df_fe = apply_frequency_encoding(
+        df_fe, artifacts['freq_configs'], artifacts['freq_maps']
+    )
+
+    # -- Align to the training schema --
+    feature_columns = artifacts['feature_columns']
+    df_fe = df_fe.reindex(columns=feature_columns, fill_value=0)
+
+    # Ensure one-hot domain columns are consistently int (not bool after
+    # reindex fill_value). Exclude 'domain_similarity', a continuous feature.
+    domain_ohe_cols = [
+        c for c in df_fe.columns
+        if c.startswith('domain_') and c != 'domain_similarity'
+    ]
+    df_fe[domain_ohe_cols] = df_fe[domain_ohe_cols].astype(int)
+
+    logger.info(f"Inference transform finished | shape: {df_fe.shape}")
+    return df_fe
 
 
 # =========================================================
