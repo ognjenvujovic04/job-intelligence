@@ -4,6 +4,7 @@ import os
 import time
 import tempfile
 import mlflow
+import mlflow.sklearn
 from .tracking.logging_helpers import _log_tags
 import pandas as pd
 import numpy as np
@@ -11,6 +12,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 from sklearn.cluster import KMeans, HDBSCAN, AgglomerativeClustering
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from wordcloud import WordCloud, STOPWORDS
@@ -69,19 +71,18 @@ def load_and_prepare(feature_path, cleaned_path, drop_high_missing=True):
 
     df_feat = df_feat.drop(columns=[c for c in drop_cols if c in df_feat.columns])
 
-    imputer = SimpleImputer(strategy="median")
-    X = pd.DataFrame(
-        imputer.fit_transform(df_feat),
-        columns=df_feat.columns
-    )
-
-    scaler = StandardScaler()
+    # Bundle imputation + scaling into a single fitted preprocessor so it can be
+    # serialized together with the clustering model (raw features -> clusters).
+    preprocessor = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
+    ])
     X_scaled = pd.DataFrame(
-        scaler.fit_transform(X),
-        columns=X.columns
+        preprocessor.fit_transform(df_feat),
+        columns=df_feat.columns,
     )
 
-    return X_scaled, df_clean
+    return X_scaled, df_clean, preprocessor, df_feat
 
 
 # =========================================================
@@ -273,7 +274,7 @@ def run_clustering(
         # 1. Prepare
         print("[1/4] Loading and preparing data ...")
         t0 = time.time()
-        X, df_clean = load_and_prepare(feature_path, cleaned_path)
+        X, df_clean, preprocessor, X_raw = load_and_prepare(feature_path, cleaned_path)
         print(f"  X shape: {X.shape}  |  df_clean rows: {len(df_clean):,}  ({time.time()-t0:.1f}s)")
 
         # 2. Fit
@@ -283,6 +284,26 @@ def run_clustering(
         labels = model.fit_predict(X)
         sizes = np.bincount(labels[labels >= 0])
         print(f"  Done in {time.time()-t0:.1f}s  |  cluster sizes: {sizes.tolist()}")
+
+        # 2a. Log the full pipeline (imputer + scaler + clustering model) so the
+        # fitted scaler is persisted alongside the model and raw features can be
+        # mapped to clusters at inference time.
+        full_pipeline = Pipeline([
+            ("preprocessor", preprocessor),
+            ("model", model),
+        ])
+        try:
+            from mlflow.models import infer_signature
+            signature = infer_signature(X_raw, labels)
+            mlflow.sklearn.log_model(
+                sk_model=full_pipeline,
+                name="model",
+                signature=signature,
+                input_example=X_raw.head(5),
+            )
+            print("  pipeline (preprocessor + model): logged")
+        except Exception as e:
+            print(f"  WARNING: failed to log pipeline model: {e}")
 
         # 2b. Save labels
         with tempfile.TemporaryDirectory() as _label_tmp:
