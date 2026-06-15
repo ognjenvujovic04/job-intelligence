@@ -4,7 +4,7 @@ TabNet Multiclass Classifier
 Trains a TabNet model to predict experience_level_ord (6 classes).
 
 Designed to be imported from a notebook:
-    from models.train_tabnet import train_tabnet, get_feature_importance
+    from src.models.train.train_tabnet import train_tabnet, get_feature_importance
 
 TabNet does NOT handle NaN natively, so median imputation is applied
 before training. Features are also standardized since TabNet's
@@ -243,8 +243,8 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    TRAIN_PATH = "../../data/processed/feature_matrix_train.csv"
-    TEST_PATH = "../../data/processed/feature_matrix_test.csv"
+    TRAIN_PATH = "../../../data/processed/feature_matrix_train.csv"
+    TEST_PATH = "../../../data/processed/feature_matrix_test.csv"
     TARGET = "experience_level_ord"
 
     df_train = pd.read_csv(TRAIN_PATH)

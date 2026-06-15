@@ -3,8 +3,8 @@ LightGBM Models
 ===============
 Trains LightGBM models for classification and regression tasks.
 
-    from models.train_lightgbm import train_lgbm_classifier, get_feature_importance
-    from models.train_lightgbm import train_lgbm_regressor, get_feature_importance
+    from src.models.train.train_lightgbm import train_lgbm_classifier, get_feature_importance
+    from src.models.train.train_lightgbm import train_lgbm_regressor, get_feature_importance
 
 LightGBM handles NaN natively, so no imputation is needed.
 For classification, LightGBM supports class_weight='balanced' directly,
@@ -196,8 +196,8 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    TRAIN_PATH = "../../data/processed/feature_matrix_train.csv"
-    TEST_PATH = "../../data/processed/feature_matrix_test.csv"
+    TRAIN_PATH = "../../../data/processed/feature_matrix_train.csv"
+    TEST_PATH = "../../../data/processed/feature_matrix_test.csv"
     TARGET = "experience_level_ord"
 
     df_train = pd.read_csv(TRAIN_PATH)

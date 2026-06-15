@@ -22,7 +22,7 @@ supported on CPU), so the same code runs locally without a GPU.
 
 Heavy deps (``sumy``, ``torch``, ``transformers``) are imported inside the
 functions so importing this module stays cheap, mirroring
-``run_classification._load_model``.
+``classification._load_model``.
 """
 
 import logging

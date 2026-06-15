@@ -190,7 +190,7 @@ if __name__ == "__main__":
     postings_csv = os.path.join(_REPO_ROOT, "data", "raw", "postings.csv")
 
     # Put the repo root on sys.path so the `src.*` package imports below resolve
-    # when this file is run directly (python src/models/run_classification.py).
+    # when this file is run directly (python src/models/classification.py).
     sys.path.insert(0, _REPO_ROOT)
 
     # Keep the first N_ROWS rows that have a non-null experience level so we have

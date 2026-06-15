@@ -153,7 +153,7 @@ def run_default_regression_experiment(
     Returns:
         dict: Summary from ``run_experiment``.
     """
-    from ..train_lightgbm import (
+    from ..train.train_lightgbm import (
         get_feature_importance,
         train_lgbm_regressor,
     )
@@ -217,29 +217,29 @@ def _resolve_model_functions(model_type):
     predict_fn is None when the standard model.predict() interface works.
     """
     if model_type == "lightgbm":
-        from ..train_lightgbm import train_lgbm_classifier, get_feature_importance
+        from ..train.train_lightgbm import train_lgbm_classifier, get_feature_importance
         return train_lgbm_classifier, None, get_feature_importance, "lightgbm"
 
     elif model_type == "xgboost":
-        from ..train_xgboost import train_xgboost, get_feature_importance
+        from ..train.train_xgboost import train_xgboost, get_feature_importance
         return train_xgboost, None, get_feature_importance, "xgboost"
 
     elif model_type == "catboost":
-        from ..train_catboost import train_catboost, predict as cb_predict, get_feature_importance
+        from ..train.train_catboost import train_catboost, predict as cb_predict, get_feature_importance
         return train_catboost, cb_predict, get_feature_importance, "catboost"
 
     elif model_type in ("sklearn_logreg", "logreg", "logistic_regression"):
-        from ..train_logreg import build_logreg_pipeline, get_feature_importance
+        from ..train.train_logreg import build_logreg_pipeline, get_feature_importance
         def _logreg_train(X_train, y_train, val_size=None, params=None):
             return build_logreg_pipeline(X_train, y_train, **(params or {}))
         return _logreg_train, None, get_feature_importance, "sklearn"
 
     elif model_type in ("sklearn_mlp", "mlp"):
-        from ..train_mlp import train_mlp, get_feature_importance
+        from ..train.train_mlp import train_mlp, get_feature_importance
         return train_mlp, None, get_feature_importance, "sklearn"
 
     elif model_type == "tabnet":
-        from ..train_tabnet import train_tabnet, predict_tabnet, get_feature_importance
+        from ..train.train_tabnet import train_tabnet, predict_tabnet, get_feature_importance
         return train_tabnet, predict_tabnet, get_feature_importance, "tabnet"
 
     else:

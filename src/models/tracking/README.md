@@ -47,7 +47,7 @@ Core entry point. Trains, evaluates, and logs a single run. You supply the train
 
 ```python
 from src.models.tracking import configure_mlflow, run_experiment
-from src.models.train_lightgbm import train_lightgbm, get_feature_importance
+from src.models.train.train_lightgbm import train_lightgbm, get_feature_importance
 from src.utils.evaluation import compute_metrics
 
 configure_mlflow()

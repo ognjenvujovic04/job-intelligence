@@ -7,7 +7,7 @@ experience_level_ord from the feature matrix.
 Evaluation is handled separately by src/utils/evaluation.py.
 
 Usage from notebook:
-    from models.train_logreg import build_logreg_pipeline, get_feature_importance
+    from src.models.train.train_logreg import build_logreg_pipeline, get_feature_importance
     pipeline = build_logreg_pipeline(X_train, y_train)
     y_pred = pipeline.predict(X_test)
 """
@@ -138,8 +138,8 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    TRAIN_PATH = "../../data/processed/feature_matrix_train.csv"
-    TEST_PATH = "../../data/processed/feature_matrix_test.csv"
+    TRAIN_PATH = "../../../data/processed/feature_matrix_train.csv"
+    TEST_PATH = "../../../data/processed/feature_matrix_test.csv"
     TARGET = "experience_level_ord"
 
     df_train = pd.read_csv(TRAIN_PATH)

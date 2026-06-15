@@ -4,7 +4,7 @@ MLP Multiclass Classifier (Keras)
 Trains a Keras MLP to predict experience_level_ord (6 classes).
 
 Designed to be imported from a notebook:
-    from models.train_mlp_keras import train_mlp, get_feature_importance
+    from src.models.train.train_keras import train_mlp, get_feature_importance
 
 Preprocessing (median imputation + standard scaling) is applied
 before training. The fitted imputer and scaler are returned

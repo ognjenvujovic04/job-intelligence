@@ -14,20 +14,20 @@ import sys
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-# Allow running as `python -m src.models.train_salary_regression` from repo root
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# Allow running as `python -m src.models.train.train_salary_regression` from repo root
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 from src.models.tracking.config import configure_mlflow, DEFAULT_REGRESSION_EXPERIMENT_NAME
 from src.models.tracking.experiment import run_experiment
-from src.models.train_lightgbm import (
+from src.models.train.train_lightgbm import (
     train_lgbm_regressor,
     get_feature_importance as lgbm_fi,
 )
-from src.models.train_xgboost import (
+from src.models.train.train_xgboost import (
     train_xgboost_regressor,
     get_feature_importance as xgb_fi,
 )
-from src.models.train_catboost import (
+from src.models.train.train_catboost import (
     train_catboost_regressor,
     predict_regressor as catboost_predict,
     get_feature_importance as cb_fi,

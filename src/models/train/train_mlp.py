@@ -4,7 +4,7 @@ MLP Multiclass Classifier
 Trains a sklearn MLPClassifier to predict experience_level_ord (6 classes).
 
 Designed to be imported from a notebook:
-    from models.train_mlp import train_mlp, get_feature_importance
+    from src.models.train.train_mlp import train_mlp, get_feature_importance
 
 Unlike tree-based models, MLP cannot handle NaN values or
 unscaled features. This module applies median imputation and
@@ -199,8 +199,8 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    TRAIN_PATH = "../../data/processed/feature_matrix_train.csv"
-    TEST_PATH = "../../data/processed/feature_matrix_test.csv"
+    TRAIN_PATH = "../../../data/processed/feature_matrix_train.csv"
+    TEST_PATH = "../../../data/processed/feature_matrix_test.csv"
     TARGET = "experience_level_ord"
 
     df_train = pd.read_csv(TRAIN_PATH)

@@ -4,7 +4,7 @@ CatBoost Multiclass Classifier
 Trains a CatBoost model to predict experience_level_ord (6 classes).
 
 Designed to be imported from a notebook:
-    from models.train_catboost import train_catboost, get_feature_importance
+    from src.models.train.train_catboost import train_catboost, get_feature_importance
 
 CatBoost handles NaN in numerical features natively, so no imputation
 is needed. Boolean columns are cast to int to avoid dtype issues.
@@ -287,8 +287,8 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    TRAIN_PATH = "../../data/processed/feature_matrix_train.csv"
-    TEST_PATH = "../../data/processed/feature_matrix_test.csv"
+    TRAIN_PATH = "../../../data/processed/feature_matrix_train.csv"
+    TEST_PATH = "../../../data/processed/feature_matrix_test.csv"
     TARGET = "experience_level_ord"
 
     df_train = pd.read_csv(TRAIN_PATH)
