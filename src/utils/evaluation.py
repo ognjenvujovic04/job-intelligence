@@ -324,7 +324,7 @@ def plot_model_comparison(comparison_df, figsize=(12, 5)):
     Returns:
         matplotlib.axes.Axes
     """
-    plot_cols = ["accuracy", "f1_macro", "f1_weighted"]
+    plot_cols = ["recall_macro", "precision_macro", "f1_macro", "f1_weighted"]
     available = [c for c in plot_cols if c in comparison_df.columns]
 
     ax = comparison_df[available].plot(

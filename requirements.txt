@@ -33,3 +33,7 @@ mlflow
 tensorflow
 optuna
 wordcloud
+
+# Summarization
+sumy
+sentencepiece
