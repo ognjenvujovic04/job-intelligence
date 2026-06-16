@@ -19,6 +19,8 @@ DEFAULT_TARGET = "experience_level_ord"
 DEFAULT_REGRESSION_EXPERIMENT_NAME = "salary-regression"
 DEFAULT_REGRESSION_TARGET = "normalized_salary"
 
+DEFAULT_ANOMALY_EXPERIMENT_NAME = "anomaly-detection"
+
 
 def configure_mlflow(tracking_uri=None, experiment_name=None):
     """
@@ -44,7 +46,9 @@ def configure_mlflow(tracking_uri=None, experiment_name=None):
 
     experiment = mlflow.get_experiment_by_name(name)
     if experiment is None:
-        mlflow.create_experiment(name, artifact_location=DEFAULT_ARTIFACT_ROOT)
+        mlflow.create_experiment(
+            name, artifact_location=f"{DEFAULT_ARTIFACT_ROOT}/{name}"
+        )
         experiment = mlflow.get_experiment_by_name(name)
     elif not experiment.artifact_location.startswith("file:///" + _REPO_ROOT.replace("\\", "/")):
         logger.warning(
