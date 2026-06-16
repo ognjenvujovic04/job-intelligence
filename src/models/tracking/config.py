@@ -20,6 +20,15 @@ DEFAULT_REGRESSION_EXPERIMENT_NAME = "salary-regression"
 DEFAULT_REGRESSION_TARGET = "normalized_salary"
 
 DEFAULT_ANOMALY_EXPERIMENT_NAME = "anomaly-detection"
+DEFAULT_CLUSTERING_EXPERIMENT_NAME = "clustering-analysis"
+
+# Production MLflow run ids the inference entry points reload (no fitting). These
+# pin "which trained model is served" for each track in one place; update here
+# after retraining rather than editing the individual inference modules.
+CLASSIFICATION_RUN_ID = "4098554e105542e8ae5e16454c7b21fe"
+ANOMALY_RUN_ID = "189ae7567ac242ebb1c61d12ec806f73"
+SALARY_RUN_ID = "1b6a1be92d2c4f42aba0aee91677ea94"
+CLUSTERING_RUN_ID = "7a7bdb80b722493991489242e2cd03bf"
 
 
 def configure_mlflow(tracking_uri=None, experiment_name=None):

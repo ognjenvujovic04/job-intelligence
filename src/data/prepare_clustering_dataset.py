@@ -22,11 +22,10 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from src.models.tracking.config import DEFAULT_TRACKING_URI
+from src.models.tracking.config import DEFAULT_TRACKING_URI, SALARY_RUN_ID
 
 logger = logging.getLogger(__name__)
 
-SALARY_RUN_ID = "1b6a1be92d2c4f42aba0aee91677ea94"
 V5_PATHS = [
     "data/processed/v5/feature_matrix_train.csv",
     "data/processed/v5/feature_matrix_test.csv",

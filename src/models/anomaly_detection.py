@@ -24,9 +24,13 @@ import os
 logger = logging.getLogger(__name__)
 
 # Run that logged the anomaly ensemble (bundle.joblib + autoencoder.pt + vae.pt
-# under the "anomaly_artifacts/" artifact path). Fill this in after training.
-RUN_ID = "189ae7567ac242ebb1c61d12ec806f73"
-EXPERIMENT_NAME = "anomaly-detection"
+# under the "anomaly_artifacts/" artifact path), and the experiment it lives in.
+# Both are pinned centrally in tracking/config.py (ANOMALY_RUN_ID /
+# DEFAULT_ANOMALY_EXPERIMENT_NAME) and re-exported here; imported lazily in
+# _load_artifacts so this module still runs as a script, where the repo root
+# isn't on sys.path until __main__.
+RUN_ID = None
+EXPERIMENT_NAME = None
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -50,7 +54,7 @@ def _load_artifacts():
     Returns a dict with the fitted preprocessing, the two sklearn/pyod models,
     the two reconstructed PyTorch models (CPU, eval mode), and their thresholds.
     """
-    global _ARTIFACTS
+    global _ARTIFACTS, RUN_ID, EXPERIMENT_NAME
     if _ARTIFACTS is not None:
         return _ARTIFACTS
 
@@ -58,7 +62,11 @@ def _load_artifacts():
     import mlflow
     import torch
 
-    from src.models.tracking.config import configure_mlflow
+    from src.models.tracking.config import (
+        ANOMALY_RUN_ID,
+        DEFAULT_ANOMALY_EXPERIMENT_NAME,
+        configure_mlflow,
+    )
     from src.models.train.train_anomaly import (
         ARTIFACT_DIR,
         AE_WEIGHTS_NAME,
@@ -68,11 +76,14 @@ def _load_artifacts():
         VAE,
     )
 
-    if RUN_ID == "REPLACE_WITH_TRAINED_RUN_ID":
+    RUN_ID = ANOMALY_RUN_ID
+    EXPERIMENT_NAME = DEFAULT_ANOMALY_EXPERIMENT_NAME
+
+    if not RUN_ID:
         raise RuntimeError(
-            "anomaly_detection.RUN_ID is not set. Run "
+            "ANOMALY_RUN_ID is not set in tracking/config.py. Run "
             "`python -m src.models.train.train_anomaly` and paste the printed "
-            "run id into RUN_ID."
+            "run id into ANOMALY_RUN_ID."
         )
 
     configure_mlflow(experiment_name=EXPERIMENT_NAME)

@@ -19,12 +19,18 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Run that logged the final Optuna-tuned LightGBM classifier. Under the MLflow
-# 3.x logged-model layout the fitted model lives in its own logged-model folder,
-# so we resolve this run to its logged-model id and load `models:/<model_id>`
-# (the `runs:/<RUN_ID>/model` path does not resolve for this layout).
-RUN_ID = "4098554e105542e8ae5e16454c7b21fe"
-EXPERIMENT_NAME = "experience-level-classification"
+# Run that logged the final Optuna-tuned LightGBM classifier, and the experiment
+# it lives in. Both are pinned centrally in tracking/config.py
+# (CLASSIFICATION_RUN_ID / DEFAULT_EXPERIMENT_NAME) and re-exported here as the
+# module's public names. Imported lazily in _load_model so this module still runs
+# as a script (python src/models/classification.py), where the repo root isn't on
+# sys.path until __main__.
+#
+# Under the MLflow 3.x logged-model layout the fitted model lives in its own
+# logged-model folder, so we resolve this run to its logged-model id and load
+# `models:/<model_id>` (the `runs:/<RUN_ID>/model` path does not resolve here).
+RUN_ID = None
+EXPERIMENT_NAME = None
 
 # Ordinal -> human-readable experience level (from notebook 3.1).
 EXPERIENCE_LABELS = {
@@ -81,14 +87,21 @@ def _load_model():
     relying on a `runs:/.../model` artifact path, which does not exist under the
     MLflow 3.x logged-model layout), then loads `models:/<model_id>`.
     """
-    global _MODEL
+    global _MODEL, RUN_ID, EXPERIMENT_NAME
     if _MODEL is not None:
         return _MODEL
 
     import mlflow
     from mlflow import MlflowClient
 
-    from src.models.tracking.config import configure_mlflow
+    from src.models.tracking.config import (
+        CLASSIFICATION_RUN_ID,
+        DEFAULT_EXPERIMENT_NAME,
+        configure_mlflow,
+    )
+
+    RUN_ID = CLASSIFICATION_RUN_ID
+    EXPERIMENT_NAME = DEFAULT_EXPERIMENT_NAME
 
     configure_mlflow(experiment_name=EXPERIMENT_NAME)
 
