@@ -119,6 +119,34 @@ def _device_and_dtype():
     return torch.device("cpu"), torch.float32
 
 
+# Module-level cache for the loaded T5 (tokenizer, model, device), keyed by
+# model_name, so a long-running process (e.g. the serving layer) loads T5 once on
+# first use and keeps it resident across requests. Mirrors the model caching in
+# src/models/classification.py. The heavy import stays inside the loader so
+# importing this module remains cheap.
+_T5_CACHE = {}
+
+
+def _load_t5(model_name=T5_MODEL):
+    """Return a cached (tokenizer, model, device) for T5, loading on first use."""
+    cached = _T5_CACHE.get(model_name)
+    if cached is not None:
+        return cached
+
+    from transformers import T5ForConditionalGeneration, T5Tokenizer
+
+    device, dtype = _device_and_dtype()
+    logger.info("Loading %s on %s (%s)", model_name, device.type, dtype)
+    tokenizer = T5Tokenizer.from_pretrained(model_name, legacy=True)
+    model = T5ForConditionalGeneration.from_pretrained(
+        model_name, torch_dtype=dtype
+    ).to(device)
+    model.eval()
+
+    _T5_CACHE[model_name] = (tokenizer, model, device)
+    return tokenizer, model, device
+
+
 # ---------------------------------------------------------------------------
 # Abstractive: DistilBART-CNN
 # ---------------------------------------------------------------------------
@@ -226,18 +254,11 @@ def t5_summarize_df(
         pd.DataFrame: copy of ``df[["job_id", text_col]]`` with a ``summary`` column.
     """
     import torch
-    from transformers import T5ForConditionalGeneration, T5Tokenizer
 
     out = df[["job_id", text_col]].copy()
     texts = out[text_col].fillna("").astype(str).tolist()
 
-    device, dtype = _device_and_dtype()
-    logger.info("Loading %s on %s (%s)", model_name, device.type, dtype)
-    tokenizer = T5Tokenizer.from_pretrained(model_name, legacy=True)
-    model = T5ForConditionalGeneration.from_pretrained(
-        model_name, torch_dtype=dtype
-    ).to(device)
-    model.eval()
+    tokenizer, model, device = _load_t5(model_name)
 
     prefix_len = len(tokenizer.encode(T5_TASK_PREFIX, add_special_tokens=False))
 

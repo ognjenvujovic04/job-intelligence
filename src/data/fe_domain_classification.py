@@ -172,14 +172,41 @@ def compute_domain_similarities(
 # ---------------------------------------------------------------------------
 # Model loading + prototype embeddings (persisted for reuse)
 # ---------------------------------------------------------------------------
-def load_model(repo_id: str = REPO_ID):
-    """Download/patch the model and return (tokenizer, model) in eval mode."""
+# Module-level cache for the loaded (tokenizer, model), keyed by repo_id, so the
+# BERT model is downloaded/patched/instantiated once per process instead of on
+# every inference request (compute_domain_sim_df -> load_model runs per
+# prepare_data call). Mirrors the _MODEL caching in src/models/classification.py.
+_MODEL_CACHE = {}
+
+
+def load_model(repo_id: str = REPO_ID, force_reload: bool = False):
+    """Download/patch the model and return (tokenizer, model) in eval mode.
+
+    The result is cached module-wide per repo_id, so repeated calls (e.g. one per
+    inference request) reuse a single in-memory model. Pass force_reload=True to
+    bypass the cache and reload.
+    """
+    if not force_reload and repo_id in _MODEL_CACHE:
+        return _MODEL_CACHE[repo_id]
+
     local_path = download_and_patch_model(repo_id)
     tokenizer = AutoTokenizer.from_pretrained(local_path)
     model = AutoModel.from_pretrained(local_path)
     model.eval()
     log.info("Model loaded")
+    _MODEL_CACHE[repo_id] = (tokenizer, model)
     return tokenizer, model
+
+
+def warmup():
+    """Eagerly load the domain model and ensure prototype embeddings exist.
+
+    For a serving layer that wants the BERT model resident before the first
+    request rather than paying the load cost on it. Safe to call repeatedly --
+    load_model caches the model module-wide.
+    """
+    ensure_prototype_embeddings()
+    load_model()
 
 
 def get_prototype_embeddings(tokenizer, model, recompute=False):
