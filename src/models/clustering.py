@@ -406,6 +406,69 @@ def run_clustering(
 # INFERENCE
 # =========================================================
 
+# Human-readable name + rationale for each of the 26 K-Means clusters, assigned
+# in notebook 4.0 after inspecting cluster profiles, feature distributions, word
+# clouds, and centroid representatives. Cluster 15 (size 9, near-duplicate repost
+# artifact) was deliberately left unlabeled there; it falls back to _UNLABELED.
+CLUSTER_LABELS = {
+    0:  "High-Demand Tech Specialists",
+    1:  "Hands-On Operations & Trades",
+    2:  "Built Environment Professionals",
+    3:  "Retail & Hospitality Frontline",
+    4:  "Niche Tech Contractors",
+    5:  "Public Sector Professional Services",
+    6:  "Accounts Receivable Roles",
+    7:  "Cross-Functional Corporate Leadership",
+    8:  "Government & Compliance Professionals",
+    9:  "Finance & Accounting Roles",
+    10: "Clinical & Patient Care",
+    11: "Part-Time Retail & Delivery",
+    12: "Creative & Design Contractors",
+    13: "Seasonal & Temporary Workers",
+    14: "Mixed Technical & Service Roles",
+    16: "Volunteer Opportunities",
+    17: "Client-Facing Account Management",
+    18: "Legal Profession",
+    19: "Internships",
+    20: "Travel Nursing Contracts",
+    21: "Education & Training",
+    22: "Senior Sales & Marketing",
+    23: "Frequent-Poster Care & Support",
+    24: "Media & Entertainment Production",
+    25: "Hourly HR & Entry Roles",
+}
+
+CLUSTER_DESCRIPTIONS = {
+    0:  "Well-paid, often-remote mid-senior engineering and data roles that attract high view counts.",
+    1:  "Lower-paid manufacturing and facilities roles like operators, technicians, and supervisors.",
+    2:  "Mid-level construction and real estate roles such as inspectors, project engineers, and property managers.",
+    3:  "Entry-level, low-wage store and service jobs filled in high volume by large chains.",
+    4:  "High-paying remote contract roles for specialized platforms like SAP, Oracle, and TigerGraph.",
+    5:  "Lower-paid, monthly-paid government and nonprofit roles with long, formal postings.",
+    6:  "A tight group of corporate accounts-receivable specialist and analyst positions.",
+    7:  "Senior data, strategy, and project roles that span industries rather than one domain.",
+    8:  "Higher-paid government and contracts roles in compliance, security, and tax.",
+    9:  "Experienced finance positions in accounting, analysis, and banking around 90k.",
+    10: "On-site healthcare roles dominated by nursing and patient-facing positions, with the lowest remote rate.",
+    11: "Low-wage, hourly, part-time retail and delivery jobs with junior requirements.",
+    12: "Higher-paid contract design roles in graphic, product, and architectural work.",
+    13: "Hourly, temporary, and seasonal roles across retail and hospitality.",
+    14: "A loose group blending medical technicians, service reps, and engineers with no dominant theme.",
+    16: "Unpaid volunteer listings concentrated in education and nonprofits.",
+    17: "Experienced sales and client-service roles across several industries, around 83k.",
+    18: "Law roles including attorneys, counsel, and legal support, with the highest salaries near 110k.",
+    19: "Lower-paid intern roles, many summer and engineering-focused, across multiple domains.",
+    20: "A small, high-paying cluster of short-term travel RN contracts paid weekly.",
+    21: "Education roles centered on schools, instructors, and training coordinators around 68k.",
+    22: "Full-time senior sales and marketing roles with longer postings, around 93k.",
+    23: "Entry-level social services and support roles posted very frequently, around 65k.",
+    24: "Higher-view media and entertainment roles, often contract-based, around 88k.",
+    25: "Hourly, lower-paid HR and entry-level positions, including recurring interview-day postings.",
+}
+
+# Fallback for any cluster id without a curated label (e.g. cluster 15).
+_UNLABELED = "Unlabeled"
+
 # Cache the loaded pipeline + its expected input columns so repeated calls don't
 # reload from MLflow.
 _MODEL = None
@@ -451,7 +514,9 @@ def predict_clusters(df, verbose=True):
         verbose (bool): emit INFO logging.
 
     Returns:
-        pd.DataFrame: a copy of df with an appended 'cluster' column (int).
+        pd.DataFrame: a copy of df with three appended columns — 'cluster' (int
+            id), 'cluster_label' (human-readable name from CLUSTER_LABELS), and
+            'cluster_description' (rationale from CLUSTER_DESCRIPTIONS).
 
     Raises:
         ValueError: when df is missing required feature columns.
@@ -477,6 +542,12 @@ def predict_clusters(df, verbose=True):
 
     out = df.copy()
     out["cluster"] = clusters.astype(int)
+    out["cluster_label"] = out["cluster"].map(
+        lambda c: CLUSTER_LABELS.get(c, _UNLABELED)
+    )
+    out["cluster_description"] = out["cluster"].map(
+        lambda c: CLUSTER_DESCRIPTIONS.get(c, "")
+    )
 
     if verbose:
         logger.info("Clustering complete")

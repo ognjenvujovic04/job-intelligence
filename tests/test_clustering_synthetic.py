@@ -45,8 +45,8 @@ def main():
 
     titles = df["title"] if "title" in df.columns else pd.Series([""] * len(df))
     print("\nCluster assignments:")
-    for i, (title, cluster) in enumerate(zip(titles, clustered["cluster"])):
-        print(f"  Posting {i} | cluster {int(cluster):2d} | {title}")
+    for i, (title, label) in enumerate(zip(titles, clustered["cluster_label"])):
+        print(f"  Posting {i} | {label:<37} | {title}")
 
 
 if __name__ == "__main__":
