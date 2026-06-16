@@ -37,3 +37,6 @@ wordcloud
 # Summarization
 sumy
 sentencepiece
+
+# Anomaly detection
+pyod
