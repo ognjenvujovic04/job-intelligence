@@ -17,12 +17,11 @@ import logging
 import os
 import sys
 
-import mlflow
 import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from src.models.tracking.config import DEFAULT_TRACKING_URI, SALARY_RUN_ID
+from src.models.salary_regression import TARGET, predict_salary
 
 logger = logging.getLogger(__name__)
 
@@ -32,27 +31,15 @@ V5_PATHS = [
 ]
 V6_DIR = "data/processed/v6"
 V6_OUT = os.path.join(V6_DIR, "feature_matrix.csv")
-TARGET = "normalized_salary"
-_NON_FEATURE_COLS = {TARGET, "job_id", "salary_is_missing"}
 
 
-def load_salary_model(run_id: str):
-    mlflow.set_tracking_uri(DEFAULT_TRACKING_URI)
+def fill_salary(df: pd.DataFrame) -> pd.DataFrame:
+    """Impute missing normalized_salary using the shared salary regressor.
 
-    from mlflow.tracking import MlflowClient
-    client = MlflowClient()
-    versions = client.search_model_versions(f"run_id='{run_id}'")
-    if versions:
-        mv = versions[0]
-        model_uri = f"models:/{mv.name}/{mv.version}"
-    else:
-        model_uri = f"runs:/{run_id}/model"
-
-    logger.info("Loading salary regression model from %s", model_uri)
-    return mlflow.pyfunc.load_model(model_uri)
-
-
-def fill_salary(df: pd.DataFrame, model) -> pd.DataFrame:
+    Only rows where the target is NaN are overwritten; observed salaries are
+    left untouched. Delegates model loading + prediction to
+    src.models.salary_regression so there is one salary-inference path.
+    """
     df = df.copy()
     missing = df[TARGET].isna()
     n_missing = int(missing.sum())
@@ -68,9 +55,8 @@ def fill_salary(df: pd.DataFrame, model) -> pd.DataFrame:
         len(df),
     )
 
-    feature_cols = [c for c in df.columns if c not in _NON_FEATURE_COLS]
-    predictions = model.predict(df.loc[missing, feature_cols])
-    df.loc[missing, TARGET] = predictions
+    predicted = predict_salary(df.loc[missing], verbose=False)
+    df.loc[missing, TARGET] = predicted["predicted_salary"].values
     return df
 
 
@@ -86,8 +72,7 @@ def main():
     df = pd.concat(parts, ignore_index=True)
     logger.info("Combined: %d rows, %d cols", *df.shape)
 
-    model = load_salary_model(SALARY_RUN_ID)
-    df = fill_salary(df, model)
+    df = fill_salary(df)
 
     n_remaining = int(df[TARGET].isna().sum())
     if n_remaining:

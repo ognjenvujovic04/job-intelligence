@@ -1,10 +1,13 @@
 # src/clustering.py
 
+import logging
 import os
 import time
 import tempfile
 import mlflow
 import mlflow.sklearn
+from mlflow.models import Model
+from .tracking.config import CLUSTERING_RUN_ID, configure_mlflow
 from .tracking.logging_helpers import _log_tags
 import pandas as pd
 import numpy as np
@@ -33,6 +36,8 @@ _EXTRA_STOPWORDS = {
 }
 _STOPWORDS = STOPWORDS | _EXTRA_STOPWORDS
 warnings.filterwarnings("ignore")
+
+logger = logging.getLogger(__name__)
 
 
 K_RANGE = [26]
@@ -395,6 +400,92 @@ def run_clustering(
 
         print(f"\nRun complete. Metrics: {metrics}")
         return labels, metrics
+
+
+# =========================================================
+# INFERENCE
+# =========================================================
+
+# Cache the loaded pipeline + its expected input columns so repeated calls don't
+# reload from MLflow.
+_MODEL = None
+_EXPECTED_COLS = None
+
+
+def _load_clustering_model():
+    """
+    Load the logged K-Means pipeline for CLUSTERING_RUN_ID, caching it module-wide.
+
+    The logged model is the full sklearn pipeline (median imputer + StandardScaler
+    + K-Means k=26). We load the raw sklearn flavor rather than pyfunc so the
+    prediction is not subject to strict dtype enforcement — `prepare_data` emits
+    the one-hot domain columns as int64 while the logged signature recorded them
+    as bool, which the scaler/K-Means handle interchangeably. The signature is
+    still used (returned alongside the model) to select the right feature columns
+    in the order the model expects.
+
+    Returns:
+        tuple: (fitted sklearn pipeline, list[str] expected input column names).
+    """
+    global _MODEL, _EXPECTED_COLS
+    if _MODEL is not None:
+        return _MODEL, _EXPECTED_COLS
+
+    configure_mlflow(experiment_name="clustering-analysis")
+
+    model_uri = f"runs:/{CLUSTERING_RUN_ID}/model"
+    logger.info("Loading clustering model from %s", model_uri)
+    _MODEL = mlflow.sklearn.load_model(model_uri)
+    _EXPECTED_COLS = Model.load(model_uri).get_input_schema().input_names()
+    return _MODEL, _EXPECTED_COLS
+
+
+def predict_clusters(df, verbose=True):
+    """
+    Assign a cluster id to each row of a prepared feature matrix.
+
+    Parameters:
+        df (pd.DataFrame): feature matrix produced by
+            src.data.run_pipeline.prepare_data (must contain the model's
+            feature columns; extra columns such as job_id are preserved).
+        verbose (bool): emit INFO logging.
+
+    Returns:
+        pd.DataFrame: a copy of df with an appended 'cluster' column (int).
+
+    Raises:
+        ValueError: when df is missing required feature columns.
+        RuntimeError: when the run/artifacts are missing.
+    """
+    if verbose:
+        logger.info("=" * 60)
+        logger.info("Clustering %s rows", f"{len(df):,}")
+        logger.info("=" * 60)
+
+    model, expected_cols = _load_clustering_model()
+
+    missing = [c for c in expected_cols if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Input is missing {len(missing)} required feature column(s): "
+            f"{missing}. Pass the output of prepare_data "
+            "(src/data/run_pipeline.py)."
+        )
+
+    # Select the model's feature columns in the expected order, then predict.
+    clusters = model.predict(df[expected_cols])
+
+    out = df.copy()
+    out["cluster"] = clusters.astype(int)
+
+    if verbose:
+        logger.info("Clustering complete")
+        logger.info(
+            "Cluster distribution:\n%s",
+            out["cluster"].value_counts().sort_index().to_string(),
+        )
+
+    return out
 
 
 # =========================================================
