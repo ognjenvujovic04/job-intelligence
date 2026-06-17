@@ -1,0 +1,40 @@
+# Keep the build context lean: ship only code + the artifacts inference needs.
+
+# Python caches / build
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtualenvs
+venv/
+.venv/
+env/
+
+# Local-only MLflow store: serving loads from models/, never these.
+mlruns/
+mlflow.db
+mlflow.db.*
+
+# Notebooks, tests, drafts
+notebooks/
+tests/
+**/draft*.ipynb
+*.ipynb
+.ipynb_checkpoints/
+
+# VCS / IDE / agent
+.git/
+.gitignore
+.vscode/
+.idea/
+.claude/
+
+# Data: exclude everything except the precomputed artifacts the image copies in.
+data/*
+!data/precomputed
+
+# Docs (not needed inside the image)
+*.md

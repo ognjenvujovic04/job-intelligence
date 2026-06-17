@@ -14,8 +14,30 @@ python -m src.api          # http://localhost:8000  (docs at /docs)
 
 - Host/port are overridable via `API_HOST` / `API_PORT`.
 - **Single worker only** — models are loaded into the process at startup, so
-  extra workers would each reload them and multiply memory use. (This is also why
-  the server is the next thing slated for dockerization, with a single worker.)
+  extra workers would each reload them and multiply memory use.
+
+## Running with Docker
+
+The image is **self-contained** — it bakes in the served models, the precomputed
+artifacts, and the HuggingFace models (domain BERT + T5), so it runs fully
+offline with no MLflow DB. Build it from the repo root.
+
+```powershell
+# One-time host prep: generate the artifacts the image copies in.
+python -m src.data.run_pipeline        # writes data/precomputed/
+python -m scripts.export_models        # writes models/<track>/ from the pinned runs
+
+docker build -t job-intelligence .
+docker run -p 8000:8000 job-intelligence     # docs at http://localhost:8000/docs
+```
+
+- `scripts/export_models.py` promotes the four pinned MLflow runs
+  (`tracking/config.py`) into a flat `models/` folder; the serving loaders read
+  from there via `MODELS_DIR` (default `/app/models` in the image) instead of
+  resolving `runs:/` through `mlflow.db`. Re-run it after retraining, then
+  rebuild the image.
+- Serving deps come from `requirements-serve.txt` (CPU-only torch, no
+  tensorflow / training-only packages). See the repo-root `Dockerfile`.
 
 ### Warmup behavior
 
@@ -66,10 +88,12 @@ Invoke-RestMethod -Uri http://localhost:8000/predict/experience-level -Method Po
 ## Prerequisites
 
 Inference depends on local-only, gitignored artifacts existing on the host:
-`mlflow.db`, the `mlruns/` logged models, and `data/precomputed/` (fitted
-encoders, prototype embeddings). Regenerate them with `python -m src.data.run_pipeline`
-and the training entry points if missing. T5 also downloads ~500 MB from
-HuggingFace on first use and is slow on CPU.
+the exported `models/<track>/` folders (written by `python -m scripts.export_models`)
+and `data/precomputed/` (fitted encoders, prototype embeddings, written by
+`python -m src.data.run_pipeline`). The serving path loads models from
+`models/` (override with `MODELS_DIR`) and does **not** read `mlflow.db` /
+`mlruns/` — those are only needed by the export step. T5 also downloads ~500 MB
+from HuggingFace on first use and is slow on CPU (pre-baked in the Docker image).
 
 ## Layout
 

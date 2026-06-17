@@ -1,0 +1,46 @@
+# Inference-only dependencies for the Dockerized API (CPU).
+#
+# Slim subset of requirements.txt: drops training/notebook deps that no serving
+# code path imports -- tensorflow, xgboost, catboost, pytorch-tabnet, optuna,
+# sentence-transformers, sumy, jupyter, seaborn, missingno, pytest.
+# Keep this in sync with the imports actually reached from
+# src/api -> src/models/inference.
+
+# API
+fastapi
+uvicorn
+
+# Core data / utils
+pandas
+numpy
+scikit-learn
+scipy
+tqdm
+joblib
+
+# Deserializer for the exported MLflow flavors (lightgbm/sklearn/pyfunc). No
+# tracking server is used on the serving path -- models load from MODELS_DIR.
+# mlflow-skinny is smaller but full mlflow is kept to avoid flavor-loader gaps.
+mlflow
+
+# Gradient-boosting model: classification AND salary are both LightGBM flavors.
+lightgbm
+
+# Anomaly ensemble: COPOD (pyod) + the torch-based Autoencoder/VAE.
+pyod
+
+# NLP: domain BERT (loaded at warmup) + T5 summarization (lazy, first /summarize).
+# torch is installed CPU-only in the Dockerfile *before* this file, so this bare
+# `torch` pin is already satisfied and pip won't pull the large CUDA build.
+torch
+transformers
+accelerate
+huggingface_hub
+sentencepiece
+
+# Imported at module scope by src/models/clustering.py (used only by its
+# plotting/training paths, not predict_clusters). Kept so the clustering module
+# imports cleanly at warmup; drop these if those imports are made lazy.
+matplotlib
+pillow
+wordcloud

@@ -43,3 +43,4 @@ mlflow.db
 draft.ipynb
 .claude
 models/
+*.tar
