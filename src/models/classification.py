@@ -81,51 +81,38 @@ def _load_feature_columns():
 
 def _load_model():
     """
-    Load the logged LightGBM classifier for RUN_ID, caching it module-wide.
+    Load the exported LightGBM classifier, caching it module-wide.
 
-    Resolves RUN_ID to its logged-model id via the MLflow client (rather than
-    relying on a `runs:/.../model` artifact path, which does not exist under the
-    MLflow 3.x logged-model layout), then loads `models:/<model_id>`.
+    Loads from the local ``models/classification`` folder (written by
+    scripts/export_models.py) via the lightgbm flavor -- no MLflow tracking DB
+    is consulted on the serving path.
     """
     global _MODEL, RUN_ID, EXPERIMENT_NAME
     if _MODEL is not None:
         return _MODEL
 
-    import mlflow
-    from mlflow import MlflowClient
+    import mlflow.lightgbm
 
     from src.models.tracking.config import (
         CLASSIFICATION_RUN_ID,
         DEFAULT_EXPERIMENT_NAME,
-        configure_mlflow,
+        served_model_path,
     )
 
+    # Re-export the source run/experiment as the module's public names (kept for
+    # introspection / back-compat); serving no longer resolves them via MLflow.
     RUN_ID = CLASSIFICATION_RUN_ID
     EXPERIMENT_NAME = DEFAULT_EXPERIMENT_NAME
 
-    configure_mlflow(experiment_name=EXPERIMENT_NAME)
-
-    client = MlflowClient()
-    experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
-    if experiment is None:
-        raise RuntimeError(
-            f"MLflow experiment '{EXPERIMENT_NAME}' not found. "
-            "Has the classifier been trained and logged?"
+    model_path = served_model_path("classification")
+    if not os.path.isdir(model_path):
+        raise FileNotFoundError(
+            f"Exported classifier not found at '{model_path}'. "
+            "Run `python -m scripts.export_models` first."
         )
 
-    logged_models = client.search_logged_models(
-        experiment_ids=[experiment.experiment_id],
-        filter_string=f"source_run_id='{RUN_ID}'",
-    )
-    if not logged_models:
-        raise RuntimeError(
-            f"No logged model found for run '{RUN_ID}' in experiment "
-            f"'{EXPERIMENT_NAME}'."
-        )
-
-    model_uri = f"models:/{logged_models[0].model_id}"
-    logger.info(f"Loading classifier from {model_uri}")
-    _MODEL = mlflow.lightgbm.load_model(model_uri)
+    logger.info(f"Loading classifier from {model_path}")
+    _MODEL = mlflow.lightgbm.load_model(model_path)
     return _MODEL
 
 

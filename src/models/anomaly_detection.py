@@ -49,7 +49,7 @@ _ARTIFACTS = None
 
 
 def _load_artifacts():
-    """Download and reconstruct the logged ensemble for RUN_ID, caching it.
+    """Load and reconstruct the exported ensemble from disk, caching it.
 
     Returns a dict with the fitted preprocessing, the two sklearn/pyod models,
     the two reconstructed PyTorch models (CPU, eval mode), and their thresholds.
@@ -59,16 +59,14 @@ def _load_artifacts():
         return _ARTIFACTS
 
     import joblib
-    import mlflow
     import torch
 
     from src.models.tracking.config import (
         ANOMALY_RUN_ID,
         DEFAULT_ANOMALY_EXPERIMENT_NAME,
-        configure_mlflow,
+        served_model_path,
     )
     from src.models.train.train_anomaly import (
-        ARTIFACT_DIR,
         AE_WEIGHTS_NAME,
         BUNDLE_NAME,
         VAE_WEIGHTS_NAME,
@@ -76,22 +74,17 @@ def _load_artifacts():
         VAE,
     )
 
+    # Re-exported as the module's public names (introspection / back-compat).
     RUN_ID = ANOMALY_RUN_ID
     EXPERIMENT_NAME = DEFAULT_ANOMALY_EXPERIMENT_NAME
 
-    if not RUN_ID:
-        raise RuntimeError(
-            "ANOMALY_RUN_ID is not set in tracking/config.py. Run "
-            "`python -m src.models.train.train_anomaly` and paste the printed "
-            "run id into ANOMALY_RUN_ID."
+    local_dir = served_model_path("anomaly")
+    if not os.path.isdir(local_dir):
+        raise FileNotFoundError(
+            f"Exported anomaly artifacts not found at '{local_dir}'. "
+            "Run `python -m scripts.export_models` first."
         )
-
-    configure_mlflow(experiment_name=EXPERIMENT_NAME)
-
-    local_dir = mlflow.artifacts.download_artifacts(
-        run_id=RUN_ID, artifact_path=ARTIFACT_DIR
-    )
-    logger.info("Loaded anomaly artifacts from %s", local_dir)
+    logger.info("Loading anomaly artifacts from %s", local_dir)
 
     bundle = joblib.load(os.path.join(local_dir, BUNDLE_NAME))
 

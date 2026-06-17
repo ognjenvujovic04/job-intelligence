@@ -30,6 +30,26 @@ ANOMALY_RUN_ID = "189ae7567ac242ebb1c61d12ec806f73"
 SALARY_RUN_ID = "1b6a1be92d2c4f42aba0aee91677ea94"
 CLUSTERING_RUN_ID = "7a7bdb80b722493991489242e2cd03bf"
 
+# Folder holding the served models exported from the runs above
+# (scripts/export_models.py writes models/<track>/). The inference loaders load
+# from here instead of resolving runs:/ through the tracking DB, so the serving
+# path never needs mlflow.db / mlruns/. Override with the MODELS_DIR env var
+# (e.g. the container sets it to /app/models).
+DEFAULT_MODELS_DIR = os.path.join(_REPO_ROOT, "models")
+
+
+def models_dir():
+    """Return the local folder holding the exported served models.
+
+    Reads the ``MODELS_DIR`` env var, falling back to ``<repo>/models``.
+    """
+    return os.environ.get("MODELS_DIR", DEFAULT_MODELS_DIR)
+
+
+def served_model_path(track):
+    """Return the folder for one served track, e.g. ``served_model_path('salary')``."""
+    return os.path.join(models_dir(), track)
+
 
 def configure_mlflow(tracking_uri=None, experiment_name=None):
     """

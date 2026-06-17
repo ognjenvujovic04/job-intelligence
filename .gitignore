@@ -39,5 +39,7 @@ Thumbs.db
 mlruns/
 mlflow.db
 
+# other
 draft.ipynb
 .claude
+models/

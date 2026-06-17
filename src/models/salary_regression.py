@@ -41,45 +41,33 @@ _MODEL = None
 
 def _load_model():
     """
-    Load the logged salary regressor for RUN_ID, caching it module-wide.
+    Load the exported salary regressor, caching it module-wide.
 
-    Resolves RUN_ID to a registered model version via `search_model_versions`
-    and loads `models:/<name>/<version>`; falls back to `runs:/<RUN_ID>/model`
-    when the run was not registered. Loaded with the pyfunc flavor so the model
-    is served regardless of the underlying framework.
+    Loads from the local ``models/salary`` folder (written by
+    scripts/export_models.py) via the pyfunc flavor so the model is served
+    regardless of the underlying framework -- no MLflow tracking DB is consulted
+    on the serving path.
     """
     global _MODEL, RUN_ID
     if _MODEL is not None:
         return _MODEL
 
-    import mlflow
-    from mlflow.tracking import MlflowClient
+    import mlflow.pyfunc
 
-    from src.models.tracking.config import (
-        DEFAULT_REGRESSION_EXPERIMENT_NAME,
-        SALARY_RUN_ID,
-        configure_mlflow,
-    )
+    from src.models.tracking.config import SALARY_RUN_ID, served_model_path
 
+    # Re-exported as the module's public name (introspection / back-compat).
     RUN_ID = SALARY_RUN_ID
-    if not RUN_ID:
-        raise RuntimeError(
-            "SALARY_RUN_ID is not set in tracking/config.py. Train and log a "
-            "salary regressor, then paste its run id into SALARY_RUN_ID."
+
+    model_path = served_model_path("salary")
+    if not os.path.isdir(model_path):
+        raise FileNotFoundError(
+            f"Exported salary regressor not found at '{model_path}'. "
+            "Run `python -m scripts.export_models` first."
         )
 
-    configure_mlflow(experiment_name=DEFAULT_REGRESSION_EXPERIMENT_NAME)
-
-    client = MlflowClient()
-    versions = client.search_model_versions(f"run_id='{RUN_ID}'")
-    if versions:
-        mv = versions[0]
-        model_uri = f"models:/{mv.name}/{mv.version}"
-    else:
-        model_uri = f"runs:/{RUN_ID}/model"
-
-    logger.info("Loading salary regression model from %s", model_uri)
-    _MODEL = mlflow.pyfunc.load_model(model_uri)
+    logger.info("Loading salary regression model from %s", model_path)
+    _MODEL = mlflow.pyfunc.load_model(model_path)
     return _MODEL
 
 

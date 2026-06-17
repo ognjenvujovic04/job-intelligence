@@ -7,7 +7,7 @@ import tempfile
 import mlflow
 import mlflow.sklearn
 from mlflow.models import Model
-from .tracking.config import CLUSTERING_RUN_ID, configure_mlflow
+from .tracking.config import CLUSTERING_RUN_ID, served_model_path
 from .tracking.logging_helpers import _log_tags
 import pandas as pd
 import numpy as np
@@ -470,14 +470,14 @@ CLUSTER_DESCRIPTIONS = {
 _UNLABELED = "Unlabeled"
 
 # Cache the loaded pipeline + its expected input columns so repeated calls don't
-# reload from MLflow.
+# reload from disk.
 _MODEL = None
 _EXPECTED_COLS = None
 
 
 def _load_clustering_model():
     """
-    Load the logged K-Means pipeline for CLUSTERING_RUN_ID, caching it module-wide.
+    Load the exported K-Means pipeline, caching it module-wide.
 
     The logged model is the full sklearn pipeline (median imputer + StandardScaler
     + K-Means k=26). We load the raw sklearn flavor rather than pyfunc so the
@@ -494,12 +494,16 @@ def _load_clustering_model():
     if _MODEL is not None:
         return _MODEL, _EXPECTED_COLS
 
-    configure_mlflow(experiment_name="clustering-analysis")
+    model_path = served_model_path("clustering")
+    if not os.path.isdir(model_path):
+        raise FileNotFoundError(
+            f"Exported clustering model not found at '{model_path}'. "
+            "Run `python -m scripts.export_models` first."
+        )
 
-    model_uri = f"runs:/{CLUSTERING_RUN_ID}/model"
-    logger.info("Loading clustering model from %s", model_uri)
-    _MODEL = mlflow.sklearn.load_model(model_uri)
-    _EXPECTED_COLS = Model.load(model_uri).get_input_schema().input_names()
+    logger.info("Loading clustering model from %s", model_path)
+    _MODEL = mlflow.sklearn.load_model(model_path)
+    _EXPECTED_COLS = Model.load(model_path).get_input_schema().input_names()
     return _MODEL, _EXPECTED_COLS
 
 
