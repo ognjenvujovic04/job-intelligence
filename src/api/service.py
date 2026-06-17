@@ -33,16 +33,48 @@ _WARM = {
     "t5": False,
 }
 
+# Cache of RawPosting's numeric field names; populated by _numeric_columns().
+_NUMERIC_COLS = None
+
 
 # ---------------------------------------------------------------------------
 # Conversion helpers
 # ---------------------------------------------------------------------------
+def _numeric_columns():
+    """Names of RawPosting fields typed as int/float (cached after first call).
+
+    These must become NaN -- not Python None -- when a posting omits them, or the
+    feature pipeline's numeric ops (e.g. np.log1p) choke on None.
+    """
+    global _NUMERIC_COLS
+    if _NUMERIC_COLS is None:
+        import typing
+
+        from src.api.schemas import RawPosting
+
+        cols = set()
+        for name, field in RawPosting.model_fields.items():
+            args = typing.get_args(field.annotation) or (field.annotation,)
+            if any(a in (int, float) for a in args):
+                cols.add(name)
+        _NUMERIC_COLS = cols
+    return _NUMERIC_COLS
+
+
 def _to_dataframe(postings):
-    """Turn a list of RawPosting models (or plain dicts) into a DataFrame."""
+    """Turn a list of RawPosting models (or plain dicts) into a DataFrame.
+
+    Numeric columns are coerced so omitted fields become NaN (the pipeline's
+    expected "missing" value), mirroring what pandas.read_csv would produce.
+    """
     import pandas as pd
 
     records = [p.model_dump() if hasattr(p, "model_dump") else dict(p) for p in postings]
-    return pd.DataFrame(records)
+    df = pd.DataFrame(records)
+    for col in _numeric_columns():
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
 
 
 def _clean_value(v):
@@ -162,7 +194,9 @@ def warmup():
     except Exception as exc:  # noqa: BLE001 - startup must survive a cold track
         logger.warning("Domain model warmup failed: %s", exc)
 
-    df = _warmup_frame()
+    # The service functions expect a list of postings (RawPosting or dict), so
+    # pass record dicts here -- not the DataFrame itself.
+    postings = _warmup_frame().to_dict(orient="records")
     tracks = (
         ("experience_level", predict_experience_level),
         ("salary", predict_salary),
@@ -171,7 +205,7 @@ def warmup():
     )
     for name, fn in tracks:
         try:
-            fn(df)
+            fn(postings)
             _WARM[name] = True
             logger.info("Warmed %s model", name)
         except Exception as exc:  # noqa: BLE001
