@@ -231,6 +231,31 @@ def distilbart_summarize_df(
 # ---------------------------------------------------------------------------
 # Abstractive: T5 base
 # ---------------------------------------------------------------------------
+def _strip_prefix_echo(text, prefix=T5_TASK_PREFIX):
+    """
+    Remove a leaked fragment of the task prefix from a T5 summary.
+
+    For short inputs, ``min_length`` forces beam search to keep generating past
+    the real content, and T5 pads by echoing part of ``T5_TASK_PREFIX`` at the
+    start of the output (e.g. "the industry domain such as ... manufacturing:
+    <actual summary>"). This strips the longest tail of the prefix that the
+    summary begins with, matched on word boundaries so it never cuts mid-word.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return text
+
+    body = text.lstrip()
+    low = body.lower()
+    prefix_words = prefix.split()
+    # start=0 is the full prefix; the first (longest) match wins.
+    for start in range(len(prefix_words)):
+        frag = " ".join(prefix_words[start:])
+        if low.startswith(frag.lower()):
+            cleaned = body[len(frag):].lstrip(" :,.-\t").strip()
+            return cleaned if cleaned else text
+    return text
+
+
 def t5_summarize_df(
     df,
     text_col="description",
@@ -295,7 +320,7 @@ def t5_summarize_df(
                 )
             decoded = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
             for i, s in zip(chunk_idx, decoded):
-                summaries[i] = s
+                summaries[i] = _strip_prefix_echo(s)
         except Exception as e:  # fall back to a truncated input on failure
             logger.warning("T5 batch at %d failed: %s", start, e)
             for i in chunk_idx:
