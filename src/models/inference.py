@@ -69,7 +69,12 @@ def detect_anomalies(df, verbose=True):
     from src.data.run_pipeline import prepare_data
     from src.models.anomaly_detection import run_anomaly_detection
 
-    return run_anomaly_detection(prepare_data(df, verbose=verbose), verbose=verbose)
+    # cap_salary_outliers=False so extreme salaries are not capped+imputed away
+    # before scoring -- the anomaly track must see them as out-of-distribution.
+    return run_anomaly_detection(
+        prepare_data(df, verbose=verbose, cap_salary_outliers=False),
+        verbose=verbose,
+    )
 
 
 def summarize_postings(df, **kwargs):

@@ -124,40 +124,28 @@ def _extract_salary_from_description(text):
     return float(np.median(annualized_candidates))
 
 
-def extract_salary_features(df, cap=None):
+def extract_salary_features(df):
     """
-    Extract salary values from description text and cap outliers.
+    Extract salary values from description text.
 
-    Applies regex-based salary extraction to the 'description' column,
-    then caps results at the 99th percentile to remove false positives.
-
-    When ``cap`` is None the cap is computed from this dataframe (training)
-    and returned for persistence; otherwise the provided cap is reused
-    (inference on new data).
+    Applies regex-based salary extraction to the 'description' column. No
+    capping is applied here; downstream ``consolidate_salary`` floors and caps
+    the extracted values before merging them into ``normalized_salary``.
 
     Parameters:
         df (pd.DataFrame): Feature dataframe with 'description' column.
-        cap (float): Precomputed upper cap to reuse on new data.
 
     Returns:
-        (pd.DataFrame, float): Dataframe and the cap applied (or None).
+        pd.DataFrame: Dataframe with an 'extracted_salary' column.
     """
     logger.info("Extracting salary values from description text")
     tqdm.pandas(desc="Extracting salaries from descriptions")
     df["extracted_salary"] = df["description"].progress_apply(_extract_salary_from_description)
 
-    if cap is None:
-        valid_extracted = df.loc[df["extracted_salary"] > 0, "extracted_salary"]
-        if not valid_extracted.empty:
-            cap = np.percentile(valid_extracted, 99)
-
-    if cap is not None:
-        df.loc[df["extracted_salary"] > cap, "extracted_salary"] = np.nan
-
     extracted_count = df["extracted_salary"].notna().sum()
     logger.info(f"  Extracted {extracted_count:,} salary values from descriptions")
 
-    return df, cap
+    return df
 
 
 # =========================================================
@@ -1039,7 +1027,7 @@ def feature_engineering_pipeline(
 
     # -- Text feature engineering (Sections 4.1 - 4.4) --
     df_fe = df.copy()
-    df_fe, extracted_salary_cap = extract_salary_features(df_fe)
+    df_fe = extract_salary_features(df_fe)
     df_fe = merge_domain_features(df_fe, domain_path=domain_path)
     df_fe = fill_experience_from_title(df_fe)
     df_fe = add_text_length_features(df_fe)
@@ -1072,7 +1060,6 @@ def feature_engineering_pipeline(
 
     if return_artifacts:
         artifacts = {
-            'extracted_salary_cap': extracted_salary_cap,
             'consolidate_salary_cap': consolidate_salary_cap,
             **loc_artifact,
             **fips_artifact,
@@ -1112,7 +1099,7 @@ def transform_features(df, domain_df, artifacts):
     df_fe = df.copy()
 
     # -- Text feature engineering (stateless + saved caps) --
-    df_fe, _ = extract_salary_features(df_fe, cap=artifacts['extracted_salary_cap'])
+    df_fe = extract_salary_features(df_fe)
     df_fe = merge_domain_features(df_fe, domain_df=domain_df)
     df_fe = fill_experience_from_title(df_fe)
     df_fe = add_text_length_features(df_fe)

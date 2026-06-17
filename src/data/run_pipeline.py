@@ -163,7 +163,7 @@ def train_pipeline(
     return df_train, df_test
 
 
-def prepare_data(df, domain_df=None, verbose=True):
+def prepare_data(df, domain_df=None, verbose=True, cap_salary_outliers=True):
     """
     Prepare new raw data for ML models using persisted training artifacts.
 
@@ -183,6 +183,11 @@ def prepare_data(df, domain_df=None, verbose=True):
             on job_id, so a superset of rows is fine). When None, similarities
             are computed in-memory via the domain model.
         verbose (bool): Enable step-by-step logging.
+        cap_salary_outliers (bool): When True (default) extreme salaries are
+            capped to NaN using the persisted train threshold, matching how the
+            supervised/clustering tracks were trained. The anomaly-detection
+            path passes False so genuinely extreme salaries survive to scoring
+            instead of being capped and median-imputed away.
 
     Returns:
         pd.DataFrame: Feature matrix aligned to the training schema.
@@ -203,9 +208,14 @@ def prepare_data(df, domain_df=None, verbose=True):
     logger.info("=" * 60)
     logger.info("INFERENCE 1/3: Cleaning")
     logger.info("=" * 60)
+    # An infinite threshold makes handle_salary_outliers' (salary > threshold)
+    # mask all-False, so no salary is capped on the anomaly path.
+    salary_threshold = (
+        artifacts["salary_outlier_threshold"] if cap_salary_outliers else float("inf")
+    )
     cleaned, _ = clean_dataframe(
         df.copy(),
-        salary_threshold=artifacts["salary_outlier_threshold"],
+        salary_threshold=salary_threshold,
         remove_dupes=False,
     )
 
