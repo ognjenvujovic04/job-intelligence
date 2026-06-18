@@ -116,6 +116,7 @@ def predict_experience_level(postings):
     from src.models.inference import classify
 
     out = classify(_to_dataframe(postings), verbose=False)
+    _WARM["experience_level"] = True
     return _records(
         out, ["job_id", "predicted_experience_level_ord", "predicted_experience_level"]
     )
@@ -125,6 +126,7 @@ def predict_salary(postings):
     from src.models.inference import predict_salary as _predict_salary
 
     out = _predict_salary(_to_dataframe(postings), verbose=False)
+    _WARM["salary"] = True
     return _records(out, ["job_id", "predicted_salary"])
 
 
@@ -132,6 +134,7 @@ def predict_clusters(postings):
     from src.models.inference import predict_clusters as _predict_clusters
 
     out = _predict_clusters(_to_dataframe(postings), verbose=False)
+    _WARM["clusters"] = True
     return _records(
         out, ["job_id", "cluster", "cluster_label", "cluster_description"]
     )
@@ -141,6 +144,7 @@ def detect_anomalies(postings):
     from src.models.inference import detect_anomalies as _detect_anomalies
 
     out = _detect_anomalies(_to_dataframe(postings), verbose=False)
+    _WARM["anomalies"] = True
     return _records(
         out,
         [
@@ -172,9 +176,13 @@ def _warmup_frame():
     if os.path.exists(_SYNTHETIC_CSV):
         return pd.read_csv(_SYNTHETIC_CSV, nrows=1)
     logger.warning("Synthetic postings CSV missing at %s; using a minimal row", _SYNTHETIC_CSV)
-    return pd.DataFrame(
-        [{"job_id": 0, "title": "Warmup", "description": "Warmup posting " * 10}]
-    )
+    # Build the row from RawPosting so every column prepare_data expects is present
+    # (defaulting to None). A bare {job_id, title, description} dict is missing most
+    # of them, so prepare_data raises KeyError and warmup silently no-ops the track.
+    from src.api.schemas import RawPosting
+
+    row = RawPosting(job_id=0, title="Warmup", description="Warmup posting " * 10).model_dump()
+    return pd.DataFrame([row])
 
 
 def warmup():
