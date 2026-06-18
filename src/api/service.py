@@ -31,6 +31,7 @@ _WARM = {
     "clusters": False,
     "anomalies": False,
     "t5": False,
+    "rag": False,
 }
 
 # Cache of RawPosting's numeric field names; populated by _numeric_columns().
@@ -166,6 +167,29 @@ def summarize(postings, **kwargs):
     return _records(out, ["job_id", "summary"])
 
 
+def rag_query(query):
+    """Answer a free-text ``query`` over the postings via retrieval + Ollama.
+
+    Unlike the prediction tracks, RAG takes a query string (not raw postings) and
+    does not use the ``inference`` df->df facade, so it imports the RAG serve
+    module directly. Returns the Ollama answer plus the retrieved job metadata,
+    JSON-sanitized like the prediction routes.
+    """
+    from src.models.serve.rag import answer_query
+
+    result = answer_query(query)
+    _WARM["rag"] = True
+    retrieved = [
+        {k: _clean_value(v) for k, v in doc.items()} for doc in result["retrieved"]
+    ]
+    return {
+        "query": result["query"],
+        "answer": result["answer"],
+        "model": result["model"],
+        "retrieved": retrieved,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Warmup
 # ---------------------------------------------------------------------------
@@ -218,6 +242,17 @@ def warmup():
             logger.info("Warmed %s model", name)
         except Exception as exc:  # noqa: BLE001
             logger.warning("%s warmup failed: %s", name, exc)
+
+    # RAG: load the embedding model + FAISS index. Ollama is external and is not
+    # required to be up at warmup, so it is not contacted here.
+    try:
+        from src.models.serve.rag import warmup as _rag_warmup
+
+        _rag_warmup()
+        _WARM["rag"] = True
+        logger.info("Warmed RAG embedding model + index")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("RAG warmup failed: %s", exc)
 
     return get_warm_status()
 

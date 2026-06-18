@@ -118,6 +118,33 @@ class PredictionResponse(BaseModel, Generic[T]):
     results: List[T]
 
 
+# ---------------------------------------------------------------------------
+# RAG (query -> answer + retrieved jobs)
+# ---------------------------------------------------------------------------
+class RagRequest(BaseModel):
+    """A free-text question to answer over the job postings."""
+
+    query: str = Field(..., min_length=1)
+
+
+class RetrievedJob(BaseModel):
+    """One posting retrieved for a RAG query, with its similarity score."""
+
+    rank: int
+    job_id: int
+    score: float
+    document: str
+
+
+class RagResponse(BaseModel):
+    """The Ollama answer plus the metadata of the jobs retrieved for the query."""
+
+    query: str
+    answer: str
+    model: str
+    retrieved: List[RetrievedJob]
+
+
 class HealthResponse(BaseModel):
     """Reported by GET /health: liveness plus which model caches are warm."""
 

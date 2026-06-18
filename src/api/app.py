@@ -27,6 +27,8 @@ from src.api.schemas import (
     HealthResponse,
     PredictionRequest,
     PredictionResponse,
+    RagRequest,
+    RagResponse,
     SalaryPrediction,
     SummaryResult,
 )
@@ -78,5 +80,9 @@ def create_app() -> FastAPI:
     @app.post("/summarize", response_model=PredictionResponse[SummaryResult])
     def summarize(req: PredictionRequest):
         return {"results": service.summarize(req.postings)}
+
+    @app.post("/rag", response_model=RagResponse)
+    def rag(req: RagRequest):
+        return service.rag_query(req.query)
 
     return app

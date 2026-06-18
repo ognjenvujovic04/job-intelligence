@@ -41,6 +41,14 @@ pytestmark = pytest.mark.skipif(
     reason=f"missing local artifacts: {_missing}",
 )
 
+# RAG depends on its own prebuilt artifacts (the FAISS index + metadata), separate
+# from the prediction tracks' artifacts; the /rag test is skipped if they are absent.
+_RAG_ARTIFACTS = [
+    os.path.join(REPO_ROOT, "data", "precomputed", "rag", "faiss_index.bin"),
+    os.path.join(REPO_ROOT, "data", "precomputed", "rag", "job_metadata.csv"),
+]
+_rag_missing = [p for p in _RAG_ARTIFACTS if not os.path.exists(p)]
+
 
 def _payload(n=3):
     """First ``n`` synthetic postings as a JSON-safe PredictionRequest body."""
@@ -127,3 +135,29 @@ def test_summarize(client):
     assert len(results) == n
     for item in results:
         assert {"job_id", "summary"}.issubset(item.keys())
+
+
+def test_rag_rejects_empty_query(client):
+    resp = client.post("/rag", json={"query": ""})
+    assert resp.status_code == 422
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(bool(_rag_missing), reason=f"missing RAG artifacts: {_rag_missing}")
+def test_rag(client):
+    # Generation needs a live Ollama server; skip (don't fail) when it's not up.
+    from src.models.serve.rag import check_ollama
+
+    if not check_ollama():
+        pytest.skip("Ollama not reachable")
+
+    resp = client.post(
+        "/rag", json={"query": "remote machine learning engineer with python"}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert isinstance(body["answer"], str) and body["answer"].strip()
+    assert body["model"]
+    assert len(body["retrieved"]) == 5
+    for item in body["retrieved"]:
+        assert {"rank", "job_id", "score", "document"}.issubset(item.keys())

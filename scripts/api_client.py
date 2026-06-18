@@ -11,9 +11,12 @@ Then call one, several, or all endpoints against the hardcoded sample postings:
     python scripts/api_client.py --task all --no-summarize   # all except T5
     python scripts/api_client.py --task salary --time         # report request latency
     python scripts/api_client.py --base-url http://localhost:8001
+    python scripts/api_client.py --task rag                    # RAG answer via Ollama
+    python scripts/api_client.py --task rag --query "remote python data jobs"
 
-Edit SAMPLE_POSTINGS below to test your own records. Uses only the standard
-library so there is nothing extra to install.
+Edit SAMPLE_POSTINGS / SAMPLE_RAG_QUERY below to test your own inputs. Uses only
+the standard library so there is nothing extra to install. The /rag task needs an
+Ollama server reachable by the API (see src/models/serve/rag.py).
 """
 
 import argparse
@@ -190,13 +193,17 @@ SAMPLE_POSTINGS = [
     # },
 ]
 
-# Task name -> route path.
+# Default free-text question for the /rag task (override with --query).
+SAMPLE_RAG_QUERY = "What remote machine learning jobs require Python and SQL?"
+
+# Task name -> route path. /rag takes a query body, not the postings batch.
 ROUTES = {
     "experience": "/predict/experience-level",
     "salary": "/predict/salary",
     "clusters": "/predict/clusters",
     "anomalies": "/detect/anomalies",
     "summarize": "/summarize",
+    "rag": "/rag",
 }
 
 
@@ -249,18 +256,25 @@ def main():
         action="store_true",
         help="report how long each request took (full round trip, in seconds)",
     )
+    parser.add_argument(
+        "--query",
+        default=SAMPLE_RAG_QUERY,
+        help="free-text question for the /rag task (default: a sample query)",
+    )
     args = parser.parse_args()
 
     tasks = list(ROUTES) if "all" in args.task else list(dict.fromkeys(args.task))
     if args.no_summarize and "summarize" in tasks:
         tasks.remove("summarize")
 
-    body = {"postings": SAMPLE_POSTINGS}
+    postings_body = {"postings": SAMPLE_POSTINGS}
     print(f"Server: {args.base_url} | postings: {len(SAMPLE_POSTINGS)} | tasks: {tasks}\n")
 
     timings = []
     for task in tasks:
         path = ROUTES[task]
+        # /rag takes a free-text query; every other route takes the postings batch.
+        body = {"query": args.query} if task == "rag" else postings_body
         print(f"=== {task}  (POST {path}) ===")
         status, payload, elapsed = call(args.base_url, path, body)
         if args.time:
