@@ -30,7 +30,7 @@ def main():
     sys.path.insert(0, REPO_ROOT)
 
     from src.data.run_pipeline import prepare_data
-    from src.models.clustering import predict_clusters
+    from src.models.serve.clustering import predict_clusters
 
     df = pd.read_csv(SYNTHETIC_CSV)
     print(f"Loaded {len(df):,} synthetic postings from {SYNTHETIC_CSV}")

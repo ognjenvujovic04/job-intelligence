@@ -2,7 +2,7 @@
 Service layer between the FastAPI routes and the model inference facade.
 
 Each public function takes the validated request postings, builds a raw-postings
-DataFrame, calls the matching ``src.models.inference`` function (which composes
+DataFrame, calls the matching ``src.models.serve.inference`` function (which composes
 ``prepare_data`` + the cached model), then projects out only that track's
 prediction columns as JSON-safe dicts -- numpy scalars become native Python and
 non-finite floats (``NaN``/``inf``) become ``None``.
@@ -10,7 +10,7 @@ non-finite floats (``NaN``/``inf``) become ``None``.
 ``warmup`` eagerly loads the four light tracks' models plus the domain BERT so
 the first real request is fast. T5 is intentionally left out: it loads on the
 first ``/summarize`` request and stays resident thereafter (see
-``src.models.summarize._load_t5``).
+``src.models.serve.summarize._load_t5``).
 """
 
 import logging
@@ -113,7 +113,7 @@ def _records(df, columns):
 # Per-task service functions
 # ---------------------------------------------------------------------------
 def predict_experience_level(postings):
-    from src.models.inference import classify
+    from src.models.serve.inference import classify
 
     out = classify(_to_dataframe(postings), verbose=False)
     _WARM["experience_level"] = True
@@ -123,7 +123,7 @@ def predict_experience_level(postings):
 
 
 def predict_salary(postings):
-    from src.models.inference import predict_salary as _predict_salary
+    from src.models.serve.inference import predict_salary as _predict_salary
 
     out = _predict_salary(_to_dataframe(postings), verbose=False)
     _WARM["salary"] = True
@@ -131,7 +131,7 @@ def predict_salary(postings):
 
 
 def predict_clusters(postings):
-    from src.models.inference import predict_clusters as _predict_clusters
+    from src.models.serve.inference import predict_clusters as _predict_clusters
 
     out = _predict_clusters(_to_dataframe(postings), verbose=False)
     _WARM["clusters"] = True
@@ -141,7 +141,7 @@ def predict_clusters(postings):
 
 
 def detect_anomalies(postings):
-    from src.models.inference import detect_anomalies as _detect_anomalies
+    from src.models.serve.inference import detect_anomalies as _detect_anomalies
 
     out = _detect_anomalies(_to_dataframe(postings), verbose=False)
     _WARM["anomalies"] = True
@@ -159,7 +159,7 @@ def detect_anomalies(postings):
 
 
 def summarize(postings, **kwargs):
-    from src.models.inference import summarize_postings
+    from src.models.serve.inference import summarize_postings
 
     out = summarize_postings(_to_dataframe(postings), **kwargs)
     _WARM["t5"] = True

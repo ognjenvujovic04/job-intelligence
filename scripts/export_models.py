@@ -66,7 +66,7 @@ def _copy_into(src_local_path, dest):
 def _export_classification(dest):
     """LightGBM classifier: resolve the MLflow 3.x logged-model id, then copy.
 
-    Mirrors src/models/classification.py::_load_model -- the run has no
+    Mirrors src/models/serve/classification.py::_load_model -- the run has no
     ``runs:/.../model`` path under the logged-model layout, so we resolve the
     model_id via the client and download ``models:/<model_id>``.
     """

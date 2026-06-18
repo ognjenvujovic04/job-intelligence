@@ -2,7 +2,7 @@
 Small smoke test: take one job description and run it through all three
 summarizers (TextRank, DistilBART, T5), printing the original vs each summary.
 
-This exercises `src/models/summarize.py` end-to-end. The two abstractive models
+This exercises `src/models/serve/summarize.py` end-to-end. The two abstractive models
 (DistilBART-CNN, T5 base) are downloaded from HuggingFace on first run and are
 slow on CPU, so this is a manual smoke test rather than a fast unit test.
 
@@ -22,7 +22,7 @@ SYNTHETIC_CSV = os.path.join(REPO_ROOT, "data", "raw", "synthetic_postings.csv")
 def main():
     # Put the repo root on sys.path so the `src.*` package imports resolve.
     sys.path.insert(0, REPO_ROOT)
-    from src.models.summarize import (
+    from src.models.serve.summarize import (
         distilbart_summarize_df,
         t5_summarize_df,
         textrank_summarize_df,

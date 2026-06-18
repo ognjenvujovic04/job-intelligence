@@ -13,7 +13,7 @@ reload the persisted run and reapply it. The same loader backs the salary
 imputation in `src/data/prepare_clustering_dataset.py`, so there is one
 salary-inference path, not two.
 
-Run `python -m src.models.salary_regression` for a small smoke test.
+Run `python -m src.models.serve.salary_regression` for a small smoke test.
 """
 
 import logging
@@ -24,11 +24,11 @@ logger = logging.getLogger(__name__)
 # Run that logged the salary regressor. Pinned centrally in tracking/config.py
 # (SALARY_RUN_ID) and re-exported here as the module's public name. Imported
 # lazily in _load_model so this module still runs as a script
-# (python src/models/salary_regression.py), where the repo root isn't on
+# (python src/models/serve/salary_regression.py), where the repo root isn't on
 # sys.path until __main__.
 RUN_ID = None
 
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # Target column, plus columns present in the feature matrix that are not model
 # inputs (kept in sync with prepare_clustering_dataset._NON_FEATURE_COLS).
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     postings_csv = os.path.join(_REPO_ROOT, "data", "raw", "postings.csv")
 
     # Put the repo root on sys.path so the `src.*` package imports resolve when
-    # this file is run directly (python src/models/salary_regression.py).
+    # this file is run directly (python src/models/serve/salary_regression.py).
     sys.path.insert(0, _REPO_ROOT)
 
     from src.data.run_pipeline import prepare_data

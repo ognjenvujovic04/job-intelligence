@@ -6,7 +6,7 @@ or `prepare_data` directly. Each function takes a DataFrame of **raw postings**
 and returns a copy with that track's predictions appended, so every track shares
 one ``raw df -> df`` contract:
 
-    from src.models.inference import classify, predict_salary, predict_clusters, \
+    from src.models.serve.inference import classify, predict_salary, predict_clusters, \
         detect_anomalies, summarize_postings
 
 Four of the five compose the shared feature-engineering pipeline
@@ -32,7 +32,7 @@ def classify(df, verbose=True):
     'predicted_experience_level_ord' and 'predicted_experience_level' columns.
     """
     from src.data.run_pipeline import prepare_data
-    from src.models.classification import run_classification
+    from .classification import run_classification
 
     return run_classification(prepare_data(df, verbose=verbose), verbose=verbose)
 
@@ -44,7 +44,7 @@ def predict_salary(df, verbose=True):
     column.
     """
     from src.data.run_pipeline import prepare_data
-    from src.models.salary_regression import predict_salary as _predict_salary
+    from .salary_regression import predict_salary as _predict_salary
 
     return _predict_salary(prepare_data(df, verbose=verbose), verbose=verbose)
 
@@ -55,7 +55,7 @@ def predict_clusters(df, verbose=True):
     Returns a copy of the prepared feature matrix with a 'cluster' column.
     """
     from src.data.run_pipeline import prepare_data
-    from src.models.clustering import predict_clusters as _predict_clusters
+    from .clustering import predict_clusters as _predict_clusters
 
     return _predict_clusters(prepare_data(df, verbose=verbose), verbose=verbose)
 
@@ -67,7 +67,7 @@ def detect_anomalies(df, verbose=True):
     columns and an 'anomaly_score' column.
     """
     from src.data.run_pipeline import prepare_data
-    from src.models.anomaly_detection import run_anomaly_detection
+    from .anomaly_detection import run_anomaly_detection
 
     # cap_salary_outliers=False so extreme salaries are not capped+imputed away
     # before scoring -- the anomaly track must see them as out-of-distribution.
@@ -84,7 +84,7 @@ def summarize_postings(df, **kwargs):
     copy of df[['job_id', 'description']] with a 'summary' column. Extra kwargs
     are forwarded to the T5 summarizer (e.g. batch_size, max_summary_tokens).
     """
-    from src.models.summarize import t5_summarize_df
+    from .summarize import t5_summarize_df
 
     return t5_summarize_df(df, **kwargs)
 
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         level=logging.INFO, format="[%(levelname)s] %(asctime)s - %(message)s"
     )
 
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     sys.path.insert(0, repo_root)
 
     synthetic_csv = os.path.join(repo_root, "data", "raw", "synthetic_postings.csv")

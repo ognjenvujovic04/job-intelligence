@@ -21,7 +21,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from src.models.salary_regression import TARGET, predict_salary
+from src.models.serve.salary_regression import TARGET, predict_salary
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def fill_salary(df: pd.DataFrame) -> pd.DataFrame:
 
     Only rows where the target is NaN are overwritten; observed salaries are
     left untouched. Delegates model loading + prediction to
-    src.models.salary_regression so there is one salary-inference path.
+    src.models.serve.salary_regression so there is one salary-inference path.
     """
     df = df.copy()
     missing = df[TARGET].isna()

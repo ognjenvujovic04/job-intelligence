@@ -1,7 +1,7 @@
 # Inference API
 
 A FastAPI server that exposes the five modeling tracks over the unified
-[`src.models.inference`](../models/inference.py) facade. Input is JSON in the raw
+[`src.models.serve.inference`](../models/serve/inference.py) facade. Input is JSON in the raw
 job-postings schema (the columns of `data/raw/postings.csv`); output is JSON
 whose shape depends on the route.
 

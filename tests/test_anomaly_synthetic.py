@@ -30,7 +30,7 @@ def main():
     sys.path.insert(0, REPO_ROOT)
 
     from src.data.run_pipeline import prepare_data
-    from src.models.anomaly_detection import run_anomaly_detection
+    from src.models.serve.anomaly_detection import run_anomaly_detection
 
     df = pd.read_csv(SYNTHETIC_CSV)
     print(f"Loaded {len(df):,} synthetic postings from {SYNTHETIC_CSV}")

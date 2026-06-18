@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 RUN_ID = None
 EXPERIMENT_NAME = None
 
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # Output column names appended to the returned DataFrame.
 _FLAG_COLS = {

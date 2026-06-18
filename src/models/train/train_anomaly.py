@@ -12,7 +12,7 @@ fitted weights + preprocessing to MLflow:
 Each model emits a binary outlier flag per row; the ensemble **anomaly score**
 is the number of models that flag a row (0-4). This module owns the model
 definitions, the shared preprocessing, and the per-model flag logic so that the
-inference entry point (``src/models/anomaly_detection.py``) can reuse them.
+inference entry point (``src/models/serve/anomaly_detection.py``) can reuse them.
 
 Unlike the gradient-boosting trainers this does not go through
 ``tracking.experiment.run_experiment`` (which assumes a single supervised model
@@ -516,7 +516,7 @@ def train_and_log(
     logger.info("Weights logged to run %s under '%s/'", run_id, ARTIFACT_DIR)
     print("\n" + "=" * 60)
     print(f"Anomaly ensemble logged.\n  RUN_ID = {run_id}")
-    print("  Paste this into src/models/anomaly_detection.py (RUN_ID).")
+    print("  Paste this into src/models/serve/anomaly_detection.py (RUN_ID).")
     print("=" * 60)
     return run_id
 

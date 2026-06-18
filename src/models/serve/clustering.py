@@ -1,4 +1,4 @@
-# src/clustering.py
+# src/models/serve/clustering.py
 
 import logging
 import os
@@ -7,8 +7,8 @@ import tempfile
 import mlflow
 import mlflow.sklearn
 from mlflow.models import Model
-from .tracking.config import CLUSTERING_RUN_ID, served_model_path
-from .tracking.logging_helpers import _log_tags
+from ..tracking.config import CLUSTERING_RUN_ID, served_model_path
+from ..tracking.logging_helpers import _log_tags
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -642,20 +642,4 @@ if __name__ == "__main__":
         inertias.append(metrics.get("inertia", float("nan")))
         silhouette_scores.append(metrics.get("silhouette", float("nan")))
 
-    # plot_kmeans_sweep(K_RANGE, inertias, silhouette_scores, EXPERIMENT)
-
-    # HDBSCAN sweep — collect n_clusters + noise_ratio across min_cluster_size values
-    # hdbscan_n_clusters = []
-    # hdbscan_noise_ratios = []
-    # for min_cluster_size in HDBSCAN_MIN_CLUSTER_SIZES:
-    #     _, metrics = run_clustering(
-    #         "hdbscan",
-    #         {"min_cluster_size": min_cluster_size, "min_samples": 10},
-    #         feature_path=FEATURE_PATH,
-    #         cleaned_path=CLEANED_PATH,
-    #         experiment_name=EXPERIMENT,
-    #     )
-    #     hdbscan_n_clusters.append(metrics.get("n_clusters", 0))
-    #     hdbscan_noise_ratios.append(metrics.get("noise_ratio", float("nan")))
-
-    # plot_hdbscan_sweep(HDBSCAN_MIN_CLUSTER_SIZES, hdbscan_n_clusters, hdbscan_noise_ratios, EXPERIMENT)
+    plot_kmeans_sweep(K_RANGE, inertias, silhouette_scores, EXPERIMENT)

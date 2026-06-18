@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # it lives in. Both are pinned centrally in tracking/config.py
 # (CLASSIFICATION_RUN_ID / DEFAULT_EXPERIMENT_NAME) and re-exported here as the
 # module's public names. Imported lazily in _load_model so this module still runs
-# as a script (python src/models/classification.py), where the repo root isn't on
+# as a script (python src/models/serve/classification.py), where the repo root isn't on
 # sys.path until __main__.
 #
 # Under the MLflow 3.x logged-model layout the fitted model lives in its own
@@ -43,7 +43,7 @@ EXPERIENCE_LABELS = {
 }
 
 # Repo-root-anchored absolute path so this works regardless of cwd.
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 FEATURE_COLUMNS_JSON = os.path.join(
     _REPO_ROOT, "data", "precomputed", "feature_columns.json"
 )
@@ -190,7 +190,7 @@ if __name__ == "__main__":
     postings_csv = os.path.join(_REPO_ROOT, "data", "raw", "postings.csv")
 
     # Put the repo root on sys.path so the `src.*` package imports below resolve
-    # when this file is run directly (python src/models/classification.py).
+    # when this file is run directly (python src/models/serve/classification.py).
     sys.path.insert(0, _REPO_ROOT)
 
     # Keep the first N_ROWS rows that have a non-null experience level so we have

@@ -12,7 +12,7 @@ columns and returns a copy with a generated ``summary`` column:
 
 The notebook itself no longer runs these models -- it loads the precomputed CSVs
 under ``data/precomputed/summarization/``. This module documents (and can
-regenerate) those artifacts; run it as ``python -m src.models.summarize``.
+regenerate) those artifacts; run it as ``python -m src.models.serve.summarize``.
 
 The abstractive functions mirror the GPU Colab scripts that produced the
 precomputed CSVs (same models, prompts, length/beam settings and short-text
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # Repo-root-anchored absolute paths so this module works regardless of cwd
 # (src/models is two levels below the repo root).
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _SUMMARY_DIR = os.path.join(_REPO_ROOT, "data", "precomputed", "summarization")
 
 # Model identities match the Colab scripts / notebook section-5/6 titles.
@@ -122,7 +122,7 @@ def _device_and_dtype():
 # Module-level cache for the loaded T5 (tokenizer, model, device), keyed by
 # model_name, so a long-running process (e.g. the serving layer) loads T5 once on
 # first use and keeps it resident across requests. Mirrors the model caching in
-# src/models/classification.py. The heavy import stays inside the loader so
+# src/models/serve/classification.py. The heavy import stays inside the loader so
 # importing this module remains cheap.
 _T5_CACHE = {}
 

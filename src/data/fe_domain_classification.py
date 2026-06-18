@@ -175,7 +175,7 @@ def compute_domain_similarities(
 # Module-level cache for the loaded (tokenizer, model), keyed by repo_id, so the
 # BERT model is downloaded/patched/instantiated once per process instead of on
 # every inference request (compute_domain_sim_df -> load_model runs per
-# prepare_data call). Mirrors the _MODEL caching in src/models/classification.py.
+# prepare_data call). Mirrors the _MODEL caching in src/models/serve/classification.py.
 _MODEL_CACHE = {}
 
 
