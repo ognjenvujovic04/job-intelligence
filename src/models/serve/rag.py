@@ -14,9 +14,10 @@ of ``src.models.serve.inference`` -- it takes a query string and returns the LLM
 answer plus the retrieved job metadata -- so the API service imports this module
 directly rather than going through that facade.
 
-The embedding model, Ollama model, retrieval depth, and document cap are fixed
-module constants. Only the Ollama base URL is environment-overridable
-(``OLLAMA_BASE_URL``) so the Dockerized API can reach an Ollama running on the host.
+The embedding model, retrieval depth, and document cap are fixed module constants.
+The Ollama base URL and model are environment-overridable (``OLLAMA_BASE_URL`` /
+``OLLAMA_MODEL``) so the Dockerized API can point at an Ollama running on the host
+and use whichever model is pulled there.
 
 Heavy deps (``faiss``, ``sentence_transformers``, ``torch``, ``requests``) are
 imported inside the functions so importing this module stays cheap, mirroring
@@ -28,6 +29,15 @@ import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+
+class OllamaUnreachableError(RuntimeError):
+    """Raised when the Ollama server can't be reached for generation.
+
+    A domain error so the API layer can translate it into a clean 503 instead of
+    leaking a ``requests.ConnectionError`` traceback as a generic 500.
+    """
+
 
 # Repo-root-anchored absolute paths so this module works regardless of cwd
 # (src/models/serve is three levels below the repo root).
@@ -43,8 +53,10 @@ DOC_COL = "document"
 # indexed documents were embedded with a "search_document:" prefix (see notebook 3.5).
 EMBED_MODEL = "nomic-ai/nomic-embed-text-v1"
 
-# Ollama: the base URL (host + port) is overridable so the container can point at
-# the host's Ollama (e.g. http://host.docker.internal:11434); the model is fixed.
+# Ollama: both the base URL (host + port) and the model are overridable so the
+# container can point at the host's Ollama (e.g. http://host.docker.internal:11434)
+# and use whichever model is pulled there (e.g. OLLAMA_MODEL=llama3.2:3b). The
+# values below are the defaults when the env vars are unset.
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "mistral"
 
@@ -64,6 +76,11 @@ _INDEX_CACHE = {}
 def _ollama_base_url():
     """Ollama base URL, overridable via the OLLAMA_BASE_URL env var."""
     return os.environ.get("OLLAMA_BASE_URL", OLLAMA_BASE_URL)
+
+
+def _ollama_model():
+    """Ollama model name, overridable via the OLLAMA_MODEL env var."""
+    return os.environ.get("OLLAMA_MODEL", OLLAMA_MODEL)
 
 
 def _load_embed_model():
@@ -166,11 +183,16 @@ def build_prompt(query, retrieved_docs):
 
 
 def generate(system_prompt, user_prompt):
-    """Send the prompt to Ollama (/api/chat, streaming disabled) and return the answer text."""
+    """Send the prompt to Ollama (/api/chat, streaming disabled) and return the answer text.
+
+    Raises ``OllamaUnreachableError`` if the server can't be contacted (DNS/connect/
+    timeout) so the caller can surface a clean error rather than a raw traceback.
+    """
     import requests
 
+    base_url = _ollama_base_url()
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": _ollama_model(),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -179,7 +201,14 @@ def generate(system_prompt, user_prompt):
         "options": {"temperature": 0.3, "num_predict": 512},
     }
 
-    resp = requests.post(f"{_ollama_base_url()}/api/chat", json=payload, timeout=120)
+    try:
+        resp = requests.post(f"{base_url}/api/chat", json=payload, timeout=120)
+    except (requests.ConnectionError, requests.Timeout) as exc:
+        raise OllamaUnreachableError(
+            f"Could not reach Ollama at {base_url}. Is it running and reachable "
+            "from here? (In Docker, point OLLAMA_BASE_URL at the host, e.g. "
+            "http://host.docker.internal:11434.)"
+        ) from exc
     resp.raise_for_status()
     return resp.json()["message"]["content"]
 
@@ -196,7 +225,7 @@ def answer_query(query, top_k=TOP_K):
     return {
         "query": query,
         "answer": answer,
-        "model": OLLAMA_MODEL,
+        "model": _ollama_model(),
         "retrieved": docs,
     }
 

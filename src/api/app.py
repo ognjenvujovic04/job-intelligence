@@ -17,7 +17,7 @@ the models are held in-process, so extra workers would duplicate them in memory.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from src.api import service
 from src.api.schemas import (
@@ -83,6 +83,11 @@ def create_app() -> FastAPI:
 
     @app.post("/rag", response_model=RagResponse)
     def rag(req: RagRequest):
-        return service.rag_query(req.query)
+        from src.models.serve.rag import OllamaUnreachableError
+
+        try:
+            return service.rag_query(req.query)
+        except OllamaUnreachableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return app

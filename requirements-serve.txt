@@ -2,7 +2,7 @@
 #
 # Slim subset of requirements.txt: drops training/notebook deps that no serving
 # code path imports -- tensorflow, xgboost, catboost, pytorch-tabnet, optuna,
-# sentence-transformers, sumy, jupyter, seaborn, missingno, pytest.
+# sumy, jupyter, seaborn, missingno, pytest.
 # Keep this in sync with the imports actually reached from
 # src/api -> src/models/inference.
 
@@ -37,6 +37,13 @@ transformers
 accelerate
 huggingface_hub
 sentencepiece
+
+# RAG: query embedding (sentence-transformers + nomic, which needs einops for its
+# remote code) and FAISS similarity search. Generation is delegated to an external
+# Ollama server, so no LLM weights ship in this image.
+sentence-transformers
+faiss-cpu
+einops
 
 # Imported at module scope by src/models/clustering.py (used only by its
 # plotting/training paths, not predict_clusters). Kept so the clustering module

@@ -12,6 +12,12 @@ served from a single FastAPI inference server:
 | Anomaly detection | Unsupervised ensemble | per-detector flags + consensus score |
 | Summarization | Abstractive (T5) | short posting summary |
 
+Alongside the prediction tracks, the API also serves a **retrieval-augmented
+generation (RAG)** endpoint: it answers a free-text question by retrieving the
+most similar postings from a prebuilt FAISS index (`nomic-ai/nomic-embed-text-v1`
+embeddings) and generating a grounded answer with a local [Ollama](https://ollama.com)
+LLM. Unlike the tracks above it takes a query string rather than postings.
+
 Work flows through a versioned data pipeline, an MLflow-tracked training package,
 numbered exploration notebooks, and the inference API.
 
@@ -74,12 +80,37 @@ python -m src.data.prepare_clustering_dataset
 mlflow ui --backend-store-uri sqlite:///mlflow.db     # http://localhost:5000
 ```
 
-**Serving:** see **[src/api/README.md](src/api/README.md)** for the inference
-server (local + Docker), the full route table, and example requests. In short:
+**Serving (local):** run the FastAPI inference server directly. It warms the
+light-track models + domain BERT on startup; T5 and the RAG embedder load lazily.
 
 ```powershell
 python -m src.api          # http://localhost:8000  (interactive docs at /docs)
 ```
+
+**Serving (Docker):** the image is self-contained — it bakes in the served
+models, the precomputed artifacts, and the HuggingFace weights (domain BERT, T5,
+the nomic RAG embedder), so the container runs fully offline with no MLflow DB.
+Generate the artifacts the image copies in once on the host, then build and run:
+
+```powershell
+# One-time host prep (writes data/precomputed/ and models/<track>/).
+python -m src.data.run_pipeline
+python -m scripts.export_models
+
+docker build -t job-intelligence .
+docker run -p 8000:8000 --add-host=host.docker.internal:host-gateway job-intelligence
+# docs at http://localhost:8000/docs
+```
+
+The `/rag` route needs an [Ollama](https://ollama.com) server running on the
+**host** (it isn't bundled). Pull a model first (`ollama pull mistral`), serve it
+beyond loopback (`OLLAMA_HOST=0.0.0.0 ollama serve`), and the container reaches it
+via `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`) — that's what
+the `--add-host` flag above resolves. Point at a different model with
+`-e OLLAMA_MODEL=llama3.2:3b`. The other tracks work without Ollama.
+
+See **[src/api/README.md](src/api/README.md)** for the full route table, request
+bodies, example requests, and warmup details.
 
 **Tests:**
 

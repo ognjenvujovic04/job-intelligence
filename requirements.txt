@@ -40,3 +40,8 @@ sentencepiece
 
 # Anomaly detection
 pyod
+
+# RAG: FAISS similarity search + nomic query embeddings (needs einops for its
+# remote code). sentence-transformers is pinned above under NLP.
+faiss-cpu
+einops

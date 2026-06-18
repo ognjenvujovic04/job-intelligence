@@ -5,6 +5,10 @@ A FastAPI server that exposes the five modeling tracks over the unified
 job-postings schema (the columns of `data/raw/postings.csv`); output is JSON
 whose shape depends on the route.
 
+A sixth route, `POST /rag`, is different in kind: it takes a free-text query
+(not postings), retrieves similar jobs from a FAISS index, and generates an
+answer with a local Ollama LLM — see [RAG](#rag-retrieval--ollama) below.
+
 ## Running
 
 ```powershell
@@ -38,6 +42,15 @@ docker run -p 8000:8000 job-intelligence     # docs at http://localhost:8000/doc
   rebuild the image.
 - Serving deps come from `requirements-serve.txt` (CPU-only torch, no
   tensorflow / training-only packages). See the repo-root `Dockerfile`.
+- The `/rag` route needs an Ollama server on the **host**; the container reaches it
+  via `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`) and uses the
+  model named by `OLLAMA_MODEL` (default `mistral` — pull it with `ollama pull mistral`,
+  or point at a model you already have, e.g. `-e OLLAMA_MODEL=llama3.2:3b`). Add
+  `--add-host=host.docker.internal:host-gateway` to `docker run` so that hostname
+  resolves (required on Linux, and on any host where Docker doesn't provide it
+  automatically). Ensure Ollama listens beyond loopback (`OLLAMA_HOST=0.0.0.0`) so the
+  container can reach it. The nomic embedder is pre-baked into the image; no LLM weights
+  ship in it.
 
 ### Warmup behavior
 
@@ -72,6 +85,7 @@ imputes/encodes the rest). Responses return one object per input posting under
 | `POST /predict/clusters` | `cluster`, `cluster_label`, `cluster_description` |
 | `POST /detect/anomalies` | `anomaly_isolation_forest`, `anomaly_copod`, `anomaly_autoencoder`, `anomaly_vae`, `anomaly_score` |
 | `POST /summarize` | `summary` (T5; first call is slow) |
+| `POST /rag` | takes `{ "query": ... }`; returns `answer` + `retrieved` jobs (see [RAG](#rag-retrieval--ollama)) |
 | `GET /health` | `status`, `warm` (per-model cache flags) |
 
 ### Example
@@ -85,6 +99,36 @@ Invoke-RestMethod -Uri http://localhost:8000/predict/experience-level -Method Po
 { "results": [ { "job_id": 1, "predicted_experience_level_ord": 3, "predicted_experience_level": "Mid-Senior level" } ] }
 ```
 
+### RAG (retrieval + Ollama)
+
+`POST /rag` takes a free-text query instead of postings and returns the LLM answer
+plus the jobs retrieved as context:
+
+```json
+{ "query": "What remote ML jobs require Python and SQL?" }
+```
+
+```json
+{
+  "query": "What remote ML jobs require Python and SQL?",
+  "answer": "Based on the postings, ...",
+  "model": "mistral",
+  "retrieved": [
+    { "rank": 1, "job_id": 3871631334, "score": 0.657, "document": "search_document: Job Title: ..." }
+  ]
+}
+```
+
+Generation is delegated to an **Ollama server you run yourself** (`ollama serve`,
+then pull a model). The API reaches it at `OLLAMA_BASE_URL` (default
+`http://localhost:11434`; the Docker image defaults to `http://host.docker.internal:11434`
+to reach the host) and uses the model named by `OLLAMA_MODEL` (default `mistral`). Both
+are environment-overridable; the embedding model (`nomic-ai/nomic-embed-text-v1`) and
+`top_k` (5) are fixed in [`src/models/serve/rag.py`](../models/serve/rag.py). Retrieval
+uses the prebuilt FAISS index + metadata under `data/precomputed/rag/`. If Ollama can't
+be reached, `/rag` returns **503** with a message naming the URL it tried (rather than a
+generic 500).
+
 ## Prerequisites
 
 Inference depends on local-only, gitignored artifacts existing on the host:
@@ -94,6 +138,10 @@ and `data/precomputed/` (fitted encoders, prototype embeddings, written by
 `models/` (override with `MODELS_DIR`) and does **not** read `mlflow.db` /
 `mlruns/` — those are only needed by the export step. T5 also downloads ~500 MB
 from HuggingFace on first use and is slow on CPU (pre-baked in the Docker image).
+
+The `/rag` route additionally needs the prebuilt FAISS index + metadata under
+`data/precomputed/rag/`, a reachable Ollama server, and the nomic embedder
+(~550 MB on first use; pre-baked in the Docker image). See [RAG](#rag-retrieval--ollama).
 
 ## Layout
 
