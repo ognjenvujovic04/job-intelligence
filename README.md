@@ -208,3 +208,9 @@ where the step prefix marks the stage: **1** = data, **2** = features,
 - **[src/api/README.md](src/api/README.md)** - inference server: routes, Docker, warmup.
 - **[src/models/tracking/README.md](src/models/tracking/README.md)** - MLflow tracking package API.
 - **[data/processed/VERSIONS.md](data/processed/VERSIONS.md)** - dataset version table.
+
+## Acknowledgments
+
+- Domain classification is built on [**0xnbk/nbk-ats-domain-v1-en**](https://huggingface.co/0xnbk/nbk-ats-domain-v1-en)
+  by [0xnbk](https://huggingface.co/0xnbk) - thanks for sharing the model that powers
+  the zero-shot domain tagging in `fe_domain_classification.py`.
